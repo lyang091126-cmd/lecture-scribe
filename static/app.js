@@ -619,7 +619,7 @@ function formatTimeFull(secs) {
 }
 
 function updateStatus(isRec) {
-  el.statusText.textContent = isRec ? '正在上课收音中' : '已暂停';
+  el.statusText.textContent = isRec ? '正在收音' : '已暂停';
 }
 
 function updateStats() {
@@ -627,7 +627,7 @@ function updateStats() {
   el.starCount.textContent = starred;
 
   const costRmb = (state.totalTokensEst / 1000 * 0.0012).toFixed(3);
-  el.tokenText.textContent = `已用: ~${state.totalTokensEst.toLocaleString()} Tokens (~¥${costRmb})`;
+  el.tokenText.textContent = `~${state.totalTokensEst.toLocaleString()} Tokens (~¥${costRmb})`;
 }
 
 function getCardTimestamp(c) {

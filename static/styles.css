@@ -58,25 +58,36 @@ body {
 
 /* Header */
 .app-header {
-  height: 56px;
-  min-height: 56px;
+  height: 54px;
+  min-height: 54px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  gap: 10px;
-  white-space: nowrap;
-  flex-wrap: nowrap;
+  padding: 0 14px;
+  gap: 8px;
+  white-space: nowrap !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+}
+
+.app-header *,
+.header-left *,
+.header-center *,
+.header-right * {
+  white-space: nowrap !important;
+  flex-wrap: nowrap !important;
+  word-break: keep-all !important;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 1;
   min-width: 0;
+  white-space: nowrap !important;
 }
 
 .logo {
@@ -84,9 +95,10 @@ body {
   align-items: center;
   gap: 6px;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   color: var(--text-primary);
   flex-shrink: 0;
+  white-space: nowrap !important;
 }
 
 .logo-icon {
