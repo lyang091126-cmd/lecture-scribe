@@ -998,6 +998,12 @@ body {
   gap: 8px;
 }
 
+.glossary-empty {
+  background: var(--bg-app);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
 .glossary-item {
   background: var(--bg-app);
   border: 1px solid var(--border-color);

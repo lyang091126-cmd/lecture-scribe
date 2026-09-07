@@ -45,6 +45,51 @@ const state = {
   }
 };
 
+const ENGLISH_STOP_WORDS = new Set([
+  'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', "aren't",
+  'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by',
+  'can', "can't", 'cannot', 'could', "couldn't", 'did', "didn't", 'do', 'does', "doesn't", 'doing',
+  "don't", 'down', 'during', 'each', 'few', 'for', 'from', 'further', 'had', "hadn't", 'has', "hasn't",
+  'have', "haven't", 'having', 'he', "he'd", "he'll", "he's", 'her', 'here', "here's", 'hers', 'herself',
+  'him', 'himself', 'his', 'how', "how's", 'i', "i'd", "i'll", "i'm", "i've", 'if', 'in', 'into', 'is',
+  "isn't", 'it', "it's", 'its', 'itself', 'let', "let's", 'me', 'more', 'most', "mustn't", 'my', 'myself',
+  'no', 'nor', 'not', 'of', 'off', 'on', 'once', 'only', 'or', 'other', 'ought', 'our', 'ours', 'ourselves',
+  'out', 'over', 'own', 'same', "shan't", 'she', "she'd", "she'll", "she's", 'should', "shouldn't", 'so',
+  'some', 'such', 'than', 'that', "that's", 'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there',
+  "there's", 'these', 'they', "they'd", "they'll", "they're", "they've", 'this', 'those', 'through', 'to',
+  'too', 'under', 'until', 'up', 'very', 'was', "wasn't", 'we', "we'd", "we'll", "we're", "we've", 'were',
+  "weren't", 'what', "what's", 'when', "when's", 'where', "where's", 'which', 'while', 'who', "who's",
+  'whom', 'why', "why's", 'with', "won't", 'would', "wouldn't", 'you', "you'd", "you'll", "you're", "you've",
+  'your', 'yours', 'yourself', 'yourselves',
+  'ok', 'okay', 'yeah', 'yep', 'nope', 'poor', 'good', 'bad', 'great', 'well', 'just', 'like', 'basically',
+  'actually', 'really', 'going', 'get', 'getting', 'got', 'make', 'making', 'made', 'say', 'saying', 'said',
+  'look', 'looking', 'see', 'seeing', 'saw', 'think', 'thinking', 'thought', 'know', 'knowing', 'knew',
+  'take', 'taking', 'took', 'come', 'coming', 'came', 'go', 'went', 'gone', 'put', 'tell', 'talk', 'talking',
+  'use', 'using', 'used', 'work', 'working', 'worked', 'try', 'trying', 'tried', 'start', 'starting', 'started',
+  'one', 'two', 'three', 'first', 'second', 'third', 'next', 'now', 'break', 'quick', 'issues', 'issue',
+  'problem', 'problems', 'thing', 'things', 'something', 'anything', 'nothing', 'someone', 'anyone', 'everyone',
+  'experience', 'experiences', 'outcome', 'outcomes', 'money', 'user', 'users', 'system', 'systems', 'need',
+  'needs', 'want', 'wants', 'way', 'ways', 'lot', 'lots', 'mean', 'means', 'meant', 'right', 'sure', 'maybe',
+  'kind', 'sort', 'bit', 'point', 'points', 'part', 'parts', 'case', 'cases', 'time', 'times'
+]);
+
+function isValidKeyword(kw) {
+  if (!kw || typeof kw !== 'string') return false;
+  kw = kw.trim().replace(/^#+/, '').trim();
+  if (kw.length < 2) return false;
+  const kwLower = kw.toLowerCase();
+  if (ENGLISH_STOP_WORDS.has(kwLower)) return false;
+  if (!kw.includes(' ')) {
+    if (/^\d+$/.test(kw)) return false;
+    if (kw.length < 4 && !(kw === kw.toUpperCase() && kw.length >= 2)) return false;
+    if (ENGLISH_STOP_WORDS.has(kwLower)) return false;
+  } else {
+    const parts = kwLower.split(/\s+/);
+    if (parts.every(p => ENGLISH_STOP_WORDS.has(p))) return false;
+  }
+  return true;
+}
+
 // DOM Elements
 const el = {
   sessionTitleInput: document.getElementById('sessionTitleInput'),
@@ -159,10 +204,17 @@ function loadSavedSession() {
     try {
       const data = JSON.parse(saved);
       if (data && data.items && data.items.length > 0) {
+        // Sanitize legacy items: strip stopwords (e.g. How, And, Poor)
+        data.items.forEach(it => {
+          if (it.keywords && Array.isArray(it.keywords)) {
+            it.keywords = it.keywords.filter(isValidKeyword);
+          }
+        });
         state.session = data;
         el.sessionTitleInput.value = state.session.title || '计算机体系结构 Lecture 01';
         renderCards();
         renderSummaryUI(state.session.summary);
+        updateSidebarOutline();
         updateStats();
       }
     } catch (e) {}
@@ -599,9 +651,15 @@ function renderCards() {
 
     const starClass = card.starred ? 'starred' : '';
     const starFill = card.starred ? 'fill="#f59e0b" color="#f59e0b"' : '';
-    const keywordsHtml = (card.keywords || []).map(kw => `
+    const validKeywords = (card.keywords || []).filter(isValidKeyword);
+    const keywordsHtml = validKeywords.map(kw => `
       <span class="keyword-pill"><i data-lucide="tag"></i>${escapeHtml(kw)}</span>
     `).join('');
+    const keywordsBarHtml = validKeywords.length > 0 ? `
+      <div class="card-keywords-bar">
+        ${keywordsHtml}
+      </div>
+    ` : '';
 
     // AI Smart Annotations (💡 深度背景讲解与专业词汇批注)
     let annotationsHtml = '';
@@ -654,9 +712,7 @@ function renderCards() {
         </div>
 
         <div class="card-qa-bar">
-          <div class="card-keywords-bar">
-            ${keywordsHtml}
-          </div>
+          ${keywordsBarHtml}
           <button class="btn-ask-ai" data-action="open-qa" data-id="${card.id}">
             <i data-lucide="message-square"></i>
             <span>问问助教 (深度答疑)</span>
@@ -683,26 +739,59 @@ function scrollToTop() {
   el.cardsContainer.scrollTop = 0;
 }
 
-// Blackboard Outline
+// Blackboard Outline (专有名词术语表过滤与智能提取)
 function updateSidebarOutline() {
-  const allKws = [];
+  if (state.session.summary && state.session.summary.glossary && state.session.summary.glossary.length > 0) {
+    return;
+  }
+
+  const termMap = new Map();
   state.session.items.forEach(it => {
-    if (it.keywords) allKws.push(...it.keywords);
-    if (it.annotations) {
-      it.annotations.forEach(a => allKws.push(a.term));
+    if (it.annotations && Array.isArray(it.annotations)) {
+      it.annotations.forEach(a => {
+        if (a && a.term && !termMap.has(a.term.toLowerCase())) {
+          termMap.set(a.term.toLowerCase(), {
+            term_en: a.term,
+            term_zh: a.type || '专业术语',
+            desc: a.explanation || '课堂专业解析与背景'
+          });
+        }
+      });
+    }
+    if (it.keywords && Array.isArray(it.keywords)) {
+      it.keywords.filter(isValidKeyword).forEach(kw => {
+        if (!termMap.has(kw.toLowerCase())) {
+          termMap.set(kw.toLowerCase(), {
+            term_en: kw,
+            term_zh: '核心术语',
+            desc: '高频学术/专业概念'
+          });
+        }
+      });
     }
   });
-  const uniqueKws = [...new Set(allKws)].slice(0, 10);
 
-  if (uniqueKws.length > 0 && !state.session.summary) {
-    el.glossaryList.innerHTML = uniqueKws.map(kw => `
+  const uniqueTerms = Array.from(termMap.values()).slice(0, 15);
+
+  if (uniqueTerms.length > 0) {
+    el.glossaryList.innerHTML = uniqueTerms.map(item => `
       <div class="glossary-item">
         <div class="term-head">
-          <span class="term-en">${escapeHtml(kw)}</span>
+          <span class="term-en">${escapeHtml(item.term_en)}</span>
+          <span class="term-zh">${escapeHtml(item.term_zh)}</span>
         </div>
-        <div class="term-desc">课堂核心概念 / 术语</div>
+        <div class="term-desc">${escapeHtml(item.desc)}</div>
       </div>
     `).join('');
+  } else {
+    el.glossaryList.innerHTML = `
+      <div class="glossary-empty">
+        <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 22px 8px; line-height: 1.6;">
+          暂未识别到复杂专有名词<br>
+          <span style="font-size: 0.74rem; opacity: 0.75;">涉及架构、标准或学术专有名词时将自动收录</span>
+        </p>
+      </div>
+    `;
   }
 }
 
@@ -752,15 +841,20 @@ function renderSummaryUI(summary) {
     el.takeawaysList.innerHTML = summary.takeaways.map(t => `<li>${escapeHtml(t)}</li>`).join('');
   }
   if (summary.glossary && summary.glossary.length > 0) {
-    el.glossaryList.innerHTML = summary.glossary.map(g => `
-      <div class="glossary-item">
-        <div class="term-head">
-          <span class="term-en">${escapeHtml(g.term_en || '')}</span>
-          <span class="term-zh">${escapeHtml(g.term_zh || '')}</span>
+    const validGlossary = summary.glossary.filter(g => isValidKeyword(g.term_en || g.term_zh));
+    if (validGlossary.length > 0) {
+      el.glossaryList.innerHTML = validGlossary.map(g => `
+        <div class="glossary-item">
+          <div class="term-head">
+            <span class="term-en">${escapeHtml(g.term_en || '')}</span>
+            <span class="term-zh">${escapeHtml(g.term_zh || '')}</span>
+          </div>
+          <div class="term-desc">${escapeHtml(g.desc || '')}</div>
         </div>
-        <div class="term-desc">${escapeHtml(g.desc || '')}</div>
-      </div>
-    `).join('');
+      `).join('');
+    } else {
+      updateSidebarOutline();
+    }
   }
 }
 

@@ -203,6 +203,66 @@ async def translate_via_free_engine(text: str, source_lang: str, target_lang: st
     )
     return " ".join(translated_chunks)
 
+ENGLISH_STOP_WORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't",
+    "as", "at", "be", "because", "been", "before", "being", "below", "between", "both", "but", "by",
+    "can", "can't", "cannot", "could", "couldn't", "did", "didn't", "do", "does", "doesn't", "doing",
+    "don't", "down", "during", "each", "few", "for", "from", "further", "had", "hadn't", "has", "hasn't",
+    "have", "haven't", "having", "he", "he'd", "he'll", "he's", "her", "here", "here's", "hers", "herself",
+    "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", "if", "in", "into", "is",
+    "isn't", "it", "it's", "its", "itself", "let", "let's", "me", "more", "most", "mustn't", "my", "myself",
+    "no", "nor", "not", "of", "off", "on", "once", "only", "or", "other", "ought", "our", "ours", "ourselves",
+    "out", "over", "own", "same", "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", "so",
+    "some", "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves", "then", "there",
+    "there's", "these", "they", "they'd", "they'll", "they're", "they've", "this", "those", "through", "to",
+    "too", "under", "until", "up", "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were",
+    "weren't", "what", "what's", "when", "when's", "where", "where's", "which", "while", "who", "who's",
+    "whom", "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've",
+    "your", "yours", "yourself", "yourselves",
+    # Common conversational words, generic verbs, adjectives, nouns
+    "ok", "okay", "yeah", "yep", "nope", "poor", "good", "bad", "great", "well", "just", "like", "basically",
+    "actually", "really", "going", "get", "getting", "got", "make", "making", "made", "say", "saying", "said",
+    "look", "looking", "see", "seeing", "saw", "think", "thinking", "thought", "know", "knowing", "knew",
+    "take", "taking", "took", "come", "coming", "came", "go", "went", "gone", "put", "tell", "talk", "talking",
+    "use", "using", "used", "work", "working", "worked", "try", "trying", "tried", "start", "starting", "started",
+    "one", "two", "three", "first", "second", "third", "next", "now", "break", "quick", "issues", "issue",
+    "problem", "problems", "thing", "things", "something", "anything", "nothing", "someone", "anyone", "everyone",
+    "experience", "experiences", "outcome", "outcomes", "money", "user", "users", "system", "systems", "need",
+    "needs", "want", "wants", "way", "ways", "lot", "lots", "mean", "means", "meant", "right", "sure", "maybe",
+    "kind", "sort", "bit", "point", "points", "part", "parts", "case", "cases", "time", "times"
+}
+
+def clean_academic_keywords(keywords: List[Any]) -> List[str]:
+    cleaned = []
+    seen = set()
+    for raw in keywords:
+        if not raw or not isinstance(raw, str):
+            continue
+        kw = raw.strip().strip('#').strip()
+        kw_lower = kw.lower()
+        if not kw or len(kw) < 2:
+            continue
+        if kw_lower in ENGLISH_STOP_WORDS:
+            continue
+        # Single word check
+        if " " not in kw:
+            if kw.isdigit():
+                continue
+            if len(kw) < 4 and not (kw.isupper() and len(kw) >= 2):
+                continue
+            if kw_lower in ENGLISH_STOP_WORDS:
+                continue
+        else:
+            # Multi-word: check if purely stop words
+            words = kw_lower.split()
+            if all(w in ENGLISH_STOP_WORDS for w in words):
+                continue
+        
+        if kw_lower not in seen:
+            seen.add(kw_lower)
+            cleaned.append(kw)
+    return cleaned[:3]
+
 def heuristic_annotations(text: str) -> List[Dict[str, str]]:
     results = []
     patterns = [
@@ -353,10 +413,11 @@ async def handle_translate(req: TranslateRequest):
     if req.api_key and req.provider in ["gemini", "openai_compatible", "deepseek"]:
         try:
             llm_result = await translate_via_llm(raw_text, req.source_lang, req.target_lang, req)
+            cleaned_kws = clean_academic_keywords(llm_result.get("keywords", []))
             return {
                 "cleaned_source": llm_result.get("cleaned_source", cleaned),
                 "translation": llm_result.get("translation", ""),
-                "keywords": llm_result.get("keywords", []),
+                "keywords": cleaned_kws,
                 "annotations": llm_result.get("annotations", []),
                 "section_heading": llm_result.get("section_heading") or heading,
                 "api_status": "ok"
@@ -372,10 +433,18 @@ async def handle_translate(req: TranslateRequest):
     translated = await translate_via_free_engine(cleaned, req.source_lang, req.target_lang)
     h_annotations = heuristic_annotations(cleaned)
 
-    keywords = []
+    # Heuristic academic keywords: only genuine acronyms, multi-word terms and annotations
+    candidate_kws = []
+    for a in h_annotations:
+        if a.get("term"):
+            candidate_kws.append(a["term"])
     if "en" in req.source_lang:
-        words = re.findall(r'\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b', cleaned)
-        keywords = list(dict.fromkeys(words))[:3]
+        acronyms = re.findall(r'\b[A-Z]{2,6}\b', cleaned)
+        candidate_kws.extend(acronyms)
+        multi_words = re.findall(r'(?<![.?!;]\s)\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b', cleaned)
+        candidate_kws.extend(multi_words)
+
+    keywords = clean_academic_keywords(candidate_kws)
 
     return {
         "cleaned_source": cleaned,
@@ -450,7 +519,7 @@ async def handle_summarize(req: SummarizeRequest):
 要求：
 1. 【概览 (overview)】：用 2-3 句话总结这堂课讲了什么核心课题。
 2. 【核心要点 (takeaways)】：提炼 4-6 条重点干货（列表形式），突出重点公式/理论/结论/合规要求。
-3. 【核心术语对照 (glossary)】：提取 3-6 个核心中英文专有名词解释。
+3. 【核心术语对照 (glossary)】：提取 3-6 个核心中英文专有名词解释（切勿包含 how, and, poor 等普通日常单词）。
 
 课堂记录节选：
 {full_text}
@@ -469,7 +538,13 @@ async def handle_summarize(req: SummarizeRequest):
             if req.provider == "gemini":
                 api_key = req.api_key.strip()
                 raw_json = await execute_gemini_call(api_key, req.model_name, prompt, is_json=True)
-                return json.loads(raw_json)
+                data = json.loads(raw_json)
+                if "glossary" in data and isinstance(data["glossary"], list):
+                    data["glossary"] = [
+                        g for g in data["glossary"]
+                        if g.get("term_en", "").strip().lower() not in ENGLISH_STOP_WORDS and len(g.get("term_en", "").strip()) >= 2
+                    ]
+                return data
             else:
                 api_key = req.api_key.strip()
                 endpoint = (req.custom_endpoint.strip() or "https://api.openai.com/v1").rstrip("/") + "/chat/completions"
@@ -489,23 +564,39 @@ async def handle_summarize(req: SummarizeRequest):
                         raw_text = resp.json()["choices"][0]["message"]["content"]
                         raw_text = re.sub(r'^```json\s*', '', raw_text.strip())
                         raw_text = re.sub(r'\s*```$', '', raw_text.strip())
-                        return json.loads(raw_text)
+                        data = json.loads(raw_text)
+                        if "glossary" in data and isinstance(data["glossary"], list):
+                            data["glossary"] = [
+                                g for g in data["glossary"]
+                                if g.get("term_en", "").strip().lower() not in ENGLISH_STOP_WORDS and len(g.get("term_en", "").strip()) >= 2
+                            ]
+                        return data
         except Exception as e:
             print(f"[Summarize] LLM error: {e}")
 
-    all_keywords = []
+    # Fallback glossary: collect genuine annotations & valid keywords only
+    all_glossary = []
+    seen_terms = set()
     for item in req.items:
-        all_keywords.extend(item.get("keywords", []))
-    unique_keywords = list(dict.fromkeys(all_keywords))[:8]
+        for a in item.get("annotations", []):
+            t = a.get("term", "").strip()
+            if t and t.lower() not in seen_terms and t.lower() not in ENGLISH_STOP_WORDS:
+                seen_terms.add(t.lower())
+                all_glossary.append({"term_en": t, "term_zh": a.get("type", "专业术语"), "desc": a.get("explanation", "核心概念")})
+        for kw in clean_academic_keywords(item.get("keywords", [])):
+            if kw.lower() not in seen_terms:
+                seen_terms.add(kw.lower())
+                all_glossary.append({"term_en": kw, "term_zh": "课堂术语", "desc": "高频学术词汇"})
 
+    takeaway_terms = [g["term_en"] for g in all_glossary[:4]]
     return {
         "overview": f"本节课共记录 {len(req.items)} 个知识意群，内容包含老师重点阐述的概念与推导。",
         "takeaways": [
-            f"知识点探讨涉及：{', '.join(unique_keywords[:4]) if unique_keywords else '课堂主体内容'}",
+            f"知识点探讨涉及：{', '.join(takeaway_terms) if takeaway_terms else '课堂核心推导与讲解'}",
             f"共记录约 {sum(len(it.get('cleaned_source', '')) for it in req.items)} 词讲授内容",
             "建议对照下方卡片中的重点时间戳与 AI 批注进行逐段复习。"
         ],
-        "glossary": [{"term_en": kw, "term_zh": kw, "desc": "课堂高频核心概念"} for kw in unique_keywords[:5]]
+        "glossary": all_glossary[:6]
     }
 
 @app.post("/api/export/docx")
