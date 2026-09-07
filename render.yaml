@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: lecture-scribe
+    name: anti-scribe
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    startCommand: python server.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
