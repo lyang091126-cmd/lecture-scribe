@@ -708,11 +708,32 @@ async def handle_translate(req: TranslateRequest):
     translated = await translate_via_free_engine(cleaned, req.source_lang, req.target_lang)
     h_annotations = heuristic_annotations(cleaned)
 
-    # Heuristic academic keywords: 严格过滤非学术缩写，优先采纳内置词典与启发式实体
+    DOMAIN_TAG_PATTERNS = [
+        (r'\b(governance|government|policy|policies)\b', "治理体系与规范"),
+        (r'\b(intelligence|ai|model|llm|deep learning)\b', "AI智能与模型架构"),
+        (r'\b(security|secure|safe|safety|threat)\b', "系统安全防线"),
+        (r'\b(detector|detection|exposed|exposure)\b', "安全检测探针"),
+        (r'\b(attack|attacks|exploit|payload|hack)\b', "攻击测试与对抗"),
+        (r'\b(system|systems|building|infrastructure)\b', "系统架构与工程"),
+        (r'\b(cache|latency|throughput|pipeline|memory)\b', "体系结构与性能"),
+        (r'\b(concurrency|thread|threads|lock|deadlock|mutex)\b', "并发与资源调度"),
+        (r'\b(network|protocol|protocols|http|tcp|packet)\b', "网络与通信协议"),
+        (r'\b(data|database|sql|storage|privacy)\b', "数据存储与隐私"),
+        (r'\b(hardware|cpu|gpu|chip|register)\b', "底层硬件与计算"),
+        (r'\b(algorithm|complexity|sort|tree|graph)\b', "算法理论与推导"),
+    ]
+
+    # Heuristic academic keywords: 严格过滤非学术缩写，优先采纳内置词典、领域模式与启发式实体
     candidate_kws = []
     for a in h_annotations:
         if a.get("term"):
             candidate_kws.append(a["term"])
+
+    comb_lower = f"{cleaned} {translated}".lower()
+    for pat, tag_zh in DOMAIN_TAG_PATTERNS:
+        if re.search(pat, comb_lower):
+            candidate_kws.append(tag_zh)
+
     if "en" in req.source_lang:
         acronyms = [
             w for w in re.findall(r'\b[A-Z]{2,6}\b', cleaned)
@@ -724,6 +745,14 @@ async def handle_translate(req: TranslateRequest):
             if w.lower() not in NON_ACADEMIC_TERMS
         ]
         candidate_kws.extend(multi_words)
+
+    # 若仍然缺少标签，从译文中抽取有代表性的学术概念短语兜底
+    if not candidate_kws:
+        zh_concepts = re.findall(r'[\u4e00-\u9fa5]{2,5}(?:机制|系统|算法|架构|模型|规范|策略|协议|逻辑)', translated)
+        if zh_concepts:
+            candidate_kws.extend(zh_concepts[:2])
+        else:
+            candidate_kws.append("课堂重点论述")
 
     keywords = clean_academic_keywords(candidate_kws)
 

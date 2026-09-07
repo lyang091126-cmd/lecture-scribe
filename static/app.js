@@ -553,39 +553,26 @@ function setupSpeechRecognition() {
     updateStatus(true);
   };
 
-  let flushedPrefix = '';
-
   recognition.onresult = (event) => {
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const transcript = event.results[i][0].transcript;
       if (event.results[i].isFinal) {
-        flushedPrefix = '';
         handleFinalSentence(transcript.trim());
       } else {
         interim += transcript;
       }
     }
     if (interim) {
-      let trimmed = interim.trim();
-      if (flushedPrefix && trimmed.startsWith(flushedPrefix)) {
-        trimmed = trimmed.slice(flushedPrefix.length).trim();
-      }
+      const trimmed = interim.trim();
       if (!trimmed) return;
 
       const prevTrimmed = (state.activeInterimText || '').trim();
       state.activeInterimText = trimmed;
       el.activeSourceText.textContent = trimmed;
 
-      // 智能意群分段：若临时文本已达到完整语意（>=15个词、>=80字符、或遇到句末标点）立即分段翻译
-      const wordCount = trimmed.split(/\s+/).length;
-      const hasSentenceEnd = /[.?!。？！]\s*$/.test(trimmed) && trimmed.length >= 20;
-
-      if (wordCount >= 16 || trimmed.length >= 80 || hasSentenceEnd) {
-        flushedPrefix = interim.trim();
-        flushThoughtBuffer();
-      } else if (trimmed !== prevTrimmed) {
-        // 只有听到新词时才重置停顿计时器，防止底噪反复重置导致死锁
+      if (trimmed !== prevTrimmed) {
+        // 实时打入停顿计时器：当老师说完停顿超过设定阈值时，才聚合形成完整知识卡片，避免产生零碎断句
         resetPauseTimer();
       }
     }
