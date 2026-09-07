@@ -738,6 +738,43 @@ async function flushThoughtBuffer() {
   }
 
   persistSession();
+
+  // 若用户正在输入文字（如问问助教），直接局部静默更新新卡片，完全避免重绘整屏打断用户
+  const isTypingNow = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+  const newCardEl = document.querySelector(`.lecture-card[data-id="${newCard.id}"]`);
+  if (isTypingNow && newCardEl) {
+    const transEl = newCardEl.querySelector('.card-trans-text');
+    if (transEl) transEl.textContent = newCard.translation;
+    const sourceEl = newCardEl.querySelector('.card-source-text');
+    if (sourceEl) sourceEl.textContent = newCard.cleaned_source || newCard.source_text;
+
+    if (newCard.annotations && newCard.annotations.length > 0 && !newCardEl.querySelector('.card-annotations-box')) {
+      const cardBody = newCardEl.querySelector('.card-body');
+      if (cardBody) {
+        const itemsHtml = newCard.annotations.map(a => `
+          <div class="annotation-item">
+            <div class="anno-term-row">
+              <span class="anno-tag ${escapeHtml(a.type || '专业术语')}">${escapeHtml(a.type || '专业术语')}</span>
+              <span class="anno-term">${escapeHtml(a.term)}</span>
+            </div>
+            <div class="anno-exp">${escapeHtml(a.explanation)}</div>
+          </div>
+        `).join('');
+        cardBody.insertAdjacentHTML('beforeend', `
+          <div class="card-annotations-box">
+            <div class="anno-header">
+              <i data-lucide="sparkles"></i>
+              <span>AI 智能讲解与背景批注</span>
+            </div>
+            ${itemsHtml}
+          </div>
+        `);
+      }
+    }
+    lucide.createIcons();
+    return;
+  }
+
   renderCards();
   lucide.createIcons();
 }
@@ -837,6 +874,7 @@ function getCardTimestamp(c) {
 }
 
 // Render Knowledge Cards with AI Smart Annotations
+// Render Knowledge Cards with AI Smart Annotations (彻底保证后台继续收音时绝不打断问答输入)
 function renderCards() {
   const items = state.session.items;
   if (!items || items.length === 0) {
@@ -845,6 +883,33 @@ function renderCards() {
     return;
   }
   el.emptyState.style.display = 'none';
+
+  // 1. 记忆当前用户正在聚焦的输入框、输入内容与光标位置
+  const activeEl = document.activeElement;
+  let activeInputId = null;
+  let selectionStart = null;
+  let selectionEnd = null;
+  if (activeEl && activeEl.id && activeEl.id.startsWith('qa_input_')) {
+    activeInputId = activeEl.id;
+    selectionStart = activeEl.selectionStart;
+    selectionEnd = activeEl.selectionEnd;
+    const cId = activeInputId.replace('qa_input_', '');
+    const c = state.session.items.find(it => it.id === cId);
+    if (c) {
+      c.qa_input = activeEl.value;
+      c.qa_open = true;
+    }
+  }
+
+  // 2. 记忆所有已打开的问答抽屉
+  document.querySelectorAll('.card-qa-drawer.open').forEach(drawer => {
+    const cId = drawer.id.replace('qa_drawer_', '');
+    const c = state.session.items.find(it => it.id === cId);
+    if (c) c.qa_open = true;
+  });
+
+  const prevScrollTop = el.cardsContainer.scrollTop;
+  const isUserInteracting = Boolean(activeInputId) || document.querySelector('.card-qa-drawer.open') !== null;
 
   // 严格保证：按创建绝对时间倒序排列，最新生成的卡片 100% 绝对在最上面！
   let sortedItems = [...items].sort((a, b) => getCardTimestamp(b) - getCardTimestamp(a));
@@ -914,6 +979,19 @@ function renderCards() {
       `;
     }
 
+    // QA 抽屉状态永久保持：无论收音生成多少新卡片，输入中的问题与回答永不丢失！
+    const drawerOpenClass = card.qa_open ? 'open' : '';
+    const qaInputValue = escapeHtml(card.qa_input || '');
+    let ansStyle = 'display:none;';
+    let ansContent = '';
+    if (card.qa_loading) {
+      ansStyle = 'display:block;';
+      ansContent = '<span class="placeholder-text">🤖 助教正在思考并组织解答...</span>';
+    } else if (card.qa_answer) {
+      ansStyle = 'display:block;';
+      ansContent = `<strong>💡 助教解答:</strong> ${escapeHtml(card.qa_answer)}`;
+    }
+
     html += `
       <div class="lecture-card ${starClass}" data-id="${card.id}">
         <div class="card-header-bar">
@@ -948,13 +1026,13 @@ function renderCards() {
           </button>
         </div>
 
-        <!-- QA Drawer -->
-        <div class="card-qa-drawer" id="qa_drawer_${card.id}">
+        <!-- QA Drawer (状态永久持久化) -->
+        <div class="card-qa-drawer ${drawerOpenClass}" id="qa_drawer_${card.id}">
           <div class="qa-input-row">
-            <input type="text" id="qa_input_${card.id}" placeholder="输入您的疑问，如：用大白话打个比方？或这段怎么考？">
+            <input type="text" id="qa_input_${card.id}" value="${qaInputValue}" placeholder="输入您的疑问，如：用大白话打个比方？或这段怎么考？">
             <button class="btn-sm btn-primary" data-action="submit-qa" data-id="${card.id}">提问</button>
           </div>
-          <div class="qa-answer-box" id="qa_ans_${card.id}" style="display:none;"></div>
+          <div class="qa-answer-box" id="qa_ans_${card.id}" style="${ansStyle}">${ansContent}</div>
         </div>
       </div>
     `;
@@ -962,9 +1040,37 @@ function renderCards() {
 
   el.cardsList.innerHTML = html;
   lucide.createIcons();
+
+  // 3. 无缝还原用户刚才聚焦的输入框与精确光标位置，输入绝不被打断！
+  if (activeInputId) {
+    const restoredInput = document.getElementById(activeInputId);
+    if (restoredInput) {
+      restoredInput.focus();
+      if (selectionStart !== null && restoredInput.setSelectionRange) {
+        restoredInput.setSelectionRange(selectionStart, selectionEnd);
+      }
+      // 平滑将卡片保持在视野内，杜绝画面弹跳
+      restoredInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  } else if (isUserInteracting || prevScrollTop > 60) {
+    // 保持滚动条位置，绝不突然弹回顶部
+    el.cardsContainer.scrollTop = prevScrollTop;
+  }
 }
 
 function scrollToTop() {
+  // 当用户正在输入文字或有问答抽屉打开、或在翻阅历史记录时，绝不强制跳转滚动条打扰用户！
+  const activeEl = document.activeElement;
+  if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+    return;
+  }
+  const hasOpenDrawer = document.querySelector('.card-qa-drawer.open');
+  if (hasOpenDrawer) {
+    return;
+  }
+  if (el.cardsContainer.scrollTop > 60) {
+    return;
+  }
   el.cardsContainer.scrollTop = 0;
 }
 
@@ -1312,11 +1418,17 @@ function setupEventListeners() {
     const qaBtn = e.target.closest('[data-action="open-qa"]');
     if (qaBtn) {
       const cardId = qaBtn.dataset.id;
+      const card = state.session.items.find(it => it.id === cardId);
       const drawer = document.getElementById(`qa_drawer_${cardId}`);
       if (drawer) {
         drawer.classList.toggle('open');
+        const isOpen = drawer.classList.contains('open');
+        if (card) card.qa_open = isOpen;
         const input = document.getElementById(`qa_input_${cardId}`);
-        if (input && drawer.classList.contains('open')) input.focus();
+        if (input && isOpen) {
+          input.focus();
+          drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
       }
       return;
     }
@@ -1331,6 +1443,8 @@ function setupEventListeners() {
       if (!card || !input || !ansBox) return;
 
       const q = input.value.trim() || '这段话的核心概念是什么？老师在强调什么？';
+      card.qa_input = input.value;
+      card.qa_loading = true;
       ansBox.style.display = 'block';
       ansBox.innerHTML = '<span class="placeholder-text">🤖 助教正在思考并组织解答...</span>';
 
@@ -1350,11 +1464,39 @@ function setupEventListeners() {
         });
         if (res.ok) {
           const data = await res.json();
+          card.qa_answer = data.answer;
+          card.qa_loading = false;
           ansBox.innerHTML = `<strong>💡 助教解答:</strong> ${escapeHtml(data.answer)}`;
+        } else {
+          card.qa_loading = false;
+          ansBox.textContent = '解答请求失败，请稍后重试！';
         }
       } catch (err) {
+        card.qa_loading = false;
         ansBox.textContent = '解答请求失败，请检查网络！';
       }
+    }
+  });
+
+  // 实时捕获问答输入，即使后台继续录音成卡也能保证每一个字即刻持久化
+  el.cardsList.addEventListener('input', (e) => {
+    if (e.target && e.target.id && e.target.id.startsWith('qa_input_')) {
+      const cardId = e.target.id.replace('qa_input_', '');
+      const card = state.session.items.find(it => it.id === cardId);
+      if (card) {
+        card.qa_input = e.target.value;
+        card.qa_open = true;
+      }
+    }
+  });
+
+  // 支持回车快捷键直接向助教提问
+  el.cardsList.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target && e.target.id && e.target.id.startsWith('qa_input_')) {
+      e.preventDefault();
+      const cardId = e.target.id.replace('qa_input_', '');
+      const submitBtn = document.querySelector(`button[data-action="submit-qa"][data-id="${cardId}"]`);
+      if (submitBtn) submitBtn.click();
     }
   });
 
