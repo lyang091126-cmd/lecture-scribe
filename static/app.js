@@ -65,7 +65,7 @@ const state = {
   config: {
     provider: 'gemini',
     apiKey: '',
-    modelName: 'gemini-3.7-flash',
+    modelName: 'gemini-2.5-flash',
     customEndpoint: '',
     pauseThreshold: 1.4
   }
@@ -379,8 +379,8 @@ function loadConfig() {
       state.config = { ...state.config, ...JSON.parse(saved) };
     } catch (e) {}
   }
-  if (!state.config.modelName || state.config.modelName.includes('2.0') || state.config.modelName.includes('1.5')) {
-    state.config.modelName = 'gemini-3.7-flash';
+  if (!state.config.modelName || state.config.modelName.includes('3.7') || state.config.modelName.includes('3.6') || state.config.modelName.includes('3.8')) {
+    state.config.modelName = 'gemini-2.5-flash';
   }
   el.cfgProvider.value = state.config.provider;
   el.cfgApiKey.value = state.config.apiKey;
@@ -896,8 +896,11 @@ function formatMarkdownAnswer(text) {
 function anchorActiveCard() {
   if (!state.activeQACardId) return;
   const targetCard = document.querySelector(`.lecture-card[data-id="${state.activeQACardId}"]`);
-  if (targetCard) {
-    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (targetCard && el.cardsContainer) {
+    const containerRect = el.cardsContainer.getBoundingClientRect();
+    const cardRect = targetCard.getBoundingClientRect();
+    const offset = cardRect.top - containerRect.top - (containerRect.height / 2) + (cardRect.height / 2);
+    el.cardsContainer.scrollBy({ top: offset, behavior: 'smooth' });
   }
 }
 
@@ -1476,9 +1479,12 @@ function setupEventListeners() {
     }
   });
 
-  // Export Dropdown
+  // Export Dropdown (确保置于最高层级，防止意外滚动错位)
   el.btnExportMenu.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (window.scrollY > 0) {
+      window.scrollTo(0, 0);
+    }
     el.exportDropdown.parentElement.classList.toggle('open');
   });
 

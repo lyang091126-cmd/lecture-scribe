@@ -49,11 +49,16 @@ body {
 
 /* Top Navigation Wrapper: 包含了 Header 与 P2 控制栏，绝对冻结固定在视口顶部 */
 .top-nav-wrapper {
-  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
   width: 100%;
-  z-index: 45;
+  z-index: 1000;
   background: var(--bg-surface);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+  overflow: visible !important;
 }
 
 /* Header */
@@ -69,7 +74,9 @@ body {
   gap: 8px;
   white-space: nowrap !important;
   flex-wrap: nowrap !important;
-  overflow-x: auto;
+  overflow: visible !important;
+  position: relative;
+  z-index: 1001;
 }
 
 .app-header *,
@@ -239,6 +246,9 @@ body {
   gap: 8px;
   flex-shrink: 0;
   white-space: nowrap;
+  position: relative;
+  overflow: visible !important;
+  z-index: 1002;
 }
 
 /* API Warning Banner */
@@ -469,44 +479,60 @@ body {
 /* Dropdown */
 .dropdown {
   position: relative;
+  overflow: visible !important;
 }
 
 .dropdown-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   right: 0;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
   display: none;
   flex-direction: column;
-  min-width: 220px;
-  z-index: 50;
-  padding: 6px;
+  min-width: 260px;
+  z-index: 999999 !important;
+  padding: 8px;
 }
 
 .dropdown.open .dropdown-menu {
-  display: flex;
+  display: flex !important;
+  animation: dropdown-fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdown-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .dropdown-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  font-size: 0.84rem;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  font-weight: 500;
   color: var(--text-primary);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.15s ease-in-out;
+  width: 100%;
 }
 
 .dropdown-item:hover {
-  background: var(--bg-app);
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
 /* Main Layout */
