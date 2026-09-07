@@ -73,6 +73,11 @@
           </div>
         </div>
 
+        <button class="btn btn-sponsor" id="btnSponsor" title="支持作者持续开发与维护">
+          <i data-lucide="coffee"></i>
+          <span>请喝咖啡 ☕</span>
+        </button>
+
         <button class="btn btn-icon" id="btnSettings" title="设置 API Key 与模型">
           <i data-lucide="settings"></i>
         </button>
@@ -222,6 +227,9 @@
               <i data-lucide="github"></i> @lyang091126-cmd
             </a>
           </div>
+          <button class="btn-sidebar-sponsor" id="btnSidebarSponsor">
+            <i data-lucide="heart"></i> 请作者喝杯咖啡 ☕
+          </button>
           <div class="watermark-copy">
             © 2026 Blueberry. All rights reserved.<br>
             受原创版权保护，严禁商业倒卖或恶意剽窃。
@@ -325,6 +333,48 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btnCancelSettings">取消</button>
         <button class="btn btn-primary" id="btnSaveSettings">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sponsor / Donate Modal (自愿赞赏作者) -->
+  <div class="modal-backdrop" id="sponsorModal">
+    <div class="modal-card modal-sponsor-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i data-lucide="coffee"></i>
+          <span>自愿打赏 • 支持独立作者</span>
+        </div>
+        <button class="btn-icon" id="btnCloseSponsor"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="modal-body text-center">
+        <div class="sponsor-hero">
+          <div class="sponsor-icon-bubble">☕</div>
+          <h3>如果 LectureScribe 帮助到了您的听课与学习</h3>
+          <p class="sponsor-desc">
+            本项目由作者 <strong>Blueberry</strong> 利用业余时间独立原创设计与维护。为广大同学与学者提供便利，<strong>基础功能永久免费开放</strong>。<br>
+            每一份自愿赞赏（即使是 1 元、3 元或半杯奶茶 🧋），都是支持工具持续稳定迭代、支付模型调试与云服务器开销的最大鼓励！
+          </p>
+        </div>
+
+        <div class="qr-container">
+          <div class="qr-box">
+            <img src="/donate_qr.jpg" alt="微信赞赏收款码" class="donate-qr-img">
+            <div class="qr-caption">
+              <i data-lucide="scan"></i>
+              <span>微信扫一扫赞赏作者（金额随意）</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sponsor-thanks">
+          <span>💖 衷心感谢每一位支持独立原创与学术工具的朋友！</span>
+        </div>
+      </div>
+
+      <div class="modal-footer justify-center">
+        <button class="btn btn-secondary" id="btnDismissSponsor">默默支持 / 关闭窗口</button>
       </div>
     </div>
   </div>

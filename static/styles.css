@@ -1423,3 +1423,137 @@ body {
   margin-top: 6px;
 }
 
+/* ==========================================================================
+   Sponsor & Voluntary Donation Styles
+   ========================================================================== */
+.btn-sponsor {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #ffffff;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-sponsor:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
+  filter: brightness(1.05);
+}
+
+.btn-sidebar-sponsor {
+  width: 100%;
+  margin: 6px 0;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(234, 88, 12, 0.15));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #d97706;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-sidebar-sponsor:hover {
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #fff;
+  border-color: transparent;
+}
+
+.modal-sponsor-card {
+  max-width: 440px;
+  text-align: center;
+}
+
+.sponsor-hero {
+  padding: 4px 0 10px;
+}
+
+.sponsor-icon-bubble {
+  font-size: 2.2rem;
+  margin-bottom: 6px;
+  animation: sponsorBounce 2.5s infinite;
+}
+
+@keyframes sponsorBounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+  60% { transform: translateY(-3px); }
+}
+
+.sponsor-hero h3 {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.sponsor-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  text-align: left;
+  background: var(--bg-app);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.qr-container {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 10px;
+}
+
+.qr-box {
+  background: #ffffff;
+  padding: 12px 14px 10px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e2e8f0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.donate-qr-img {
+  width: 220px;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+}
+
+.qr-caption {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #059669;
+}
+
+.sponsor-thanks {
+  font-size: 0.76rem;
+  color: var(--accent);
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+.justify-center {
+  justify-content: center !important;
+}
+
+

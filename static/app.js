@@ -166,7 +166,14 @@ const el = {
   cfgCustomEndpoint: document.getElementById('cfgCustomEndpoint'),
   groupCustomEndpoint: document.getElementById('groupCustomEndpoint'),
   cfgPauseThreshold: document.getElementById('cfgPauseThreshold'),
-  valPauseThreshold: document.getElementById('valPauseThreshold')
+  valPauseThreshold: document.getElementById('valPauseThreshold'),
+
+  // Sponsor / Donate Modal
+  sponsorModal: document.getElementById('sponsorModal'),
+  btnSponsor: document.getElementById('btnSponsor'),
+  btnSidebarSponsor: document.getElementById('btnSidebarSponsor'),
+  btnCloseSponsor: document.getElementById('btnCloseSponsor'),
+  btnDismissSponsor: document.getElementById('btnDismissSponsor')
 };
 
 // Initialize
@@ -1130,6 +1137,23 @@ function setupEventListeners() {
   });
 
   el.sessionTitleInput.addEventListener('change', persistSession);
+
+  // Sponsor / Donate Modal Listeners
+  const openSponsor = () => {
+    el.sponsorModal?.classList.add('open');
+    lucide.createIcons();
+  };
+  const closeSponsor = () => {
+    el.sponsorModal?.classList.remove('open');
+  };
+
+  el.btnSponsor?.addEventListener('click', openSponsor);
+  el.btnSidebarSponsor?.addEventListener('click', openSponsor);
+  el.btnCloseSponsor?.addEventListener('click', closeSponsor);
+  el.btnDismissSponsor?.addEventListener('click', closeSponsor);
+  el.sponsorModal?.addEventListener('click', (e) => {
+    if (e.target === el.sponsorModal) closeSponsor();
+  });
 }
 
 window.addEventListener('DOMContentLoaded', init);
