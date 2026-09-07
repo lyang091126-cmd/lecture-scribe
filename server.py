@@ -133,7 +133,7 @@ class TranslateRequest(BaseModel):
 class AskCardRequest(BaseModel):
     card_source: str
     card_translation: str
-    question: str
+    question: Optional[str] = ""
     provider: Optional[str] = "gemini"
     api_key: Optional[str] = ""
     custom_endpoint: Optional[str] = ""
@@ -727,18 +727,29 @@ async def handle_translate(req: TranslateRequest):
 
 @app.post("/api/ask-card")
 async def ask_card(req: AskCardRequest):
-    prompt = f"""你是一名耐心的大学教授助教。学生在听课时对老师讲的以下这段话有疑问：
+    q_str = (req.question or "").strip()
+    if q_str:
+        user_inquiry = f"【同学提问】：{q_str}"
+    else:
+        user_inquiry = "【要求】：无需学生手动输入提问，请助教直接对老师这段讲授进行深度通俗精讲与答疑拆解。"
 
-【老师原话】:
+    prompt = f"""你是一名世界顶级名校计算机与工程学科的资深助教。
+请针对以下老师课堂讲授的这段核心内容，为学生提供一份结构清晰、生动通俗的【助教深度解析与考点精讲】：
+
+【老师原声】:
 {req.card_source}
 
 【中文精译】:
 {req.card_translation}
 
-【学生提问】:
-{req.question}
+{user_inquiry}
 
-请用通俗生动、切中要点的语言为学生解答（可举生活中的例子，说明这个概念的现实意义或考试常考点），控制在 150~300 字以内。"""
+请用通俗易懂、切中要害的学术助教语言展开精讲，重点包含：
+1. 【通俗大白话拆解】：用最形象的生活比喻或底层逻辑，解释老师这段话的核心概念究竟是什么。
+2. 【核心原理与背景】：该知识点在技术体系或行业实践中为什么重要，解决了什么关键痛点。
+3. 【常考点与避坑指南】：在考试考核或技术面试中，这段内容最容易怎么考，有哪些极易混淆的概念陷阱。
+
+控制在 160~320 字以内，层次分明，让学生一眼看懂！"""
 
     if req.api_key and req.provider in ["gemini", "openai_compatible", "deepseek"]:
         try:
@@ -754,7 +765,7 @@ async def ask_card(req: AskCardRequest):
                 payload = {
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "You are a helpful university teaching assistant."},
+                        {"role": "system", "content": "You are an elite university teaching assistant. Provide direct, highly educational lecture breakdowns."},
                         {"role": "user", "content": prompt}
                     ]
                 }
@@ -767,9 +778,16 @@ async def ask_card(req: AskCardRequest):
         except Exception as e:
             print(f"[AskCard] LLM error: {e}")
 
-    return {
-        "answer": f"💡 助教速解：老师这段话主要强调了信息安全合规与流程监管（如 FDA、HIPAA、NIST 等标准）在企业实际架构中的落地。在涉及敏感数据时，离岗锁屏及自动化审计是强制要求。"
-    }
+    # 智能启发式后备答疑：根据卡片内容匹配内置知识库，直接输出结构化解析
+    src_tr = f"{req.card_source} {req.card_translation}".lower()
+    matched = [v for k, v in BUILTIN_TECH_GLOSSARY.items() if k in src_tr]
+    if matched:
+        top_t = matched[0]
+        fb_ans = f"💡 助教深度拆解：老师这段话的核心在于【{top_t['term_en']} ({top_t['term_zh']})】。\n\n• 大白话理解：{top_t['desc']}\n• 核心原理：在实际系统架构与合规落地中，该机制是不可或缺的防范与管控枢纽。\n• 考点提示：期末或面试常考其工作流程、适用场景及安全边界。"
+    else:
+        fb_ans = "💡 助教深度拆解：老师这段话聚焦于核心学术推导与技术规范的实际落地。\n\n• 大白话理解：建议结合前后语境把握因果逻辑与应用场景。\n• 复习与考点：注意老师在此处提及的专业术语与执行前提，是考核中的高频要点。"
+
+    return {"answer": fb_ans}
 
 @app.post("/api/summarize")
 async def handle_summarize(req: SummarizeRequest):
