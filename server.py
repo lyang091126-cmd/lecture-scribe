@@ -18,11 +18,12 @@ import json
 import asyncio
 import time
 import io
+import uuid
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -52,15 +53,58 @@ DATA_DIR = BASE_DIR / "data"
 SESSIONS_DIR = DATA_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
+# --- Security: strict session/client id validation (prevents path traversal) ---
+SAFE_ID_RE = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
+
+def safe_session_path(session_id: str) -> Path:
+    """Validates session_id against a strict allowlist pattern and resolves
+    the path, then double-checks it stays inside SESSIONS_DIR. Raises 400
+    on anything that looks like path traversal or an invalid id."""
+    if not session_id or not SAFE_ID_RE.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id")
+    candidate = (SESSIONS_DIR / f"{session_id}.json").resolve()
+    if SESSIONS_DIR.resolve() not in candidate.parents:
+        raise HTTPException(status_code=400, detail="Invalid session id")
+    return candidate
+
+def get_client_id(request: Request) -> str:
+    """Reads a per-browser client id from the X-Client-Id header. This is
+    NOT a real auth system, just isolation between anonymous browser
+    sessions so users can't list/read/delete each other's lecture notes."""
+    cid = request.headers.get("x-client-id", "").strip()
+    if not cid or not SAFE_ID_RE.match(cid):
+        raise HTTPException(status_code=400, detail="Missing or invalid X-Client-Id header")
+    return cid
+
 app = FastAPI(title="LectureScribe - 课堂智能双语速记与排版系统")
 
+# --- Security: CORS. Wildcard origin + credentials is an invalid/unsafe
+# combination; we only ever read a custom header (no cookies), so
+# allow_credentials is off and origins are wide open for a public API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-Client-Id"],
 )
+
+# --- Security: very small in-memory rate limiter for the free/no-key path,
+# keyed by client IP. Not distributed-safe (fine for a single Render
+# instance); prevents one caller from hammering the scraped Google
+# translate endpoints or your LLM key into oblivion.
+_rate_buckets: Dict[str, List[float]] = {}
+RATE_LIMIT_MAX_REQUESTS = 30
+RATE_LIMIT_WINDOW_SECONDS = 60
+
+def check_rate_limit(request: Request):
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    bucket = _rate_buckets.setdefault(ip, [])
+    bucket[:] = [t for t in bucket if now - t < RATE_LIMIT_WINDOW_SECONDS]
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试 (Too many requests)")
+    bucket.append(now)
 
 FILLER_PATTERNS_EN = [
     r'\b(um+h?|uh+h?|er+h?|ah+h?)\b',
@@ -165,6 +209,56 @@ class SessionData(BaseModel):
     duration_seconds: int = 0
     items: List[Dict[str, Any]] = []
     summary: Optional[Dict[str, Any]] = None
+    client_id: Optional[str] = None
+
+# --- Security: SSRF guard. custom_endpoint is attacker-controlled input
+# (any visitor's browser can set it), and the server would otherwise
+# happily POST to whatever URL it's given, with the caller's API key
+# attached as a Bearer token. Restrict to a small allowlist of known
+# LLM-provider hosts, and always reject private/internal/metadata IP
+# ranges outright.
+ALLOWED_LLM_HOST_SUFFIXES = (
+    "api.openai.com",
+    "api.deepseek.com",
+    "generativelanguage.googleapis.com",
+    "openrouter.ai",
+    "api.siliconflow.cn",
+    "api.moonshot.cn",
+)
+
+def validate_custom_endpoint(raw_endpoint: str) -> str:
+    from urllib.parse import urlparse
+    import ipaddress
+    import socket
+
+    endpoint = (raw_endpoint or "").strip().rstrip("/") or "https://api.openai.com/v1"
+    parsed = urlparse(endpoint)
+
+    if parsed.scheme != "https":
+        raise HTTPException(status_code=400, detail="自定义接口必须使用 https")
+
+    host = (parsed.hostname or "").lower()
+    if not any(host == suf or host.endswith("." + suf) for suf in ALLOWED_LLM_HOST_SUFFIXES):
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的自定义接口域名: {host}。出于安全考虑，仅支持: {', '.join(ALLOWED_LLM_HOST_SUFFIXES)}"
+        )
+
+    # Belt-and-suspenders: block anything that resolves to a private /
+    # loopback / link-local address (e.g. cloud metadata endpoints),
+    # even if it somehow matched the suffix list above.
+    try:
+        infos = socket.getaddrinfo(host, None)
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise HTTPException(status_code=400, detail="自定义接口解析到内网地址，已拒绝")
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # DNS resolution issues are surfaced naturally by the actual request later
+
+    return endpoint
 
 async def translate_single_chunk(text: str, source_lang: str, target_lang: str) -> str:
     # 1. Google Clients5 API (极速高可用，零限流)
@@ -648,7 +742,7 @@ async def translate_via_llm(text: str, source_lang: str, target_lang: str, req: 
         return json.loads(raw_json)
     else:
         api_key = req.api_key.strip()
-        endpoint = (req.custom_endpoint.strip() or "https://api.openai.com/v1").rstrip("/") + "/chat/completions"
+        endpoint = validate_custom_endpoint(req.custom_endpoint) + "/chat/completions"
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
         model = req.model_name.strip() or "gpt-4o-mini"
         payload = {
@@ -671,7 +765,7 @@ async def translate_via_llm(text: str, source_lang: str, target_lang: str, req: 
                 raise Exception(f"API Error {resp.status_code}: {resp.text}")
 
 @app.post("/api/translate")
-async def handle_translate(req: TranslateRequest):
+async def handle_translate(req: TranslateRequest, request: Request, _rl=Depends(check_rate_limit)):
     raw_text = req.text.strip()
     if not raw_text:
         return {"cleaned_source": "", "translation": "", "keywords": [], "annotations": [], "section_heading": None}
@@ -842,7 +936,7 @@ def generate_dynamic_academic_answer(card_src: str, card_tr: str, user_q: str = 
 📌 *助教提示：本条已由智能情境引擎生成深度学术解析。若在右上角设置中填入 API Key，助教将由云端大模型（Gemini / GPT）进行长文本全方位推理！*"""
 
 @app.post("/api/ask-card")
-async def handle_ask_card(req: AskCardRequest):
+async def handle_ask_card(req: AskCardRequest, request: Request, _rl=Depends(check_rate_limit)):
     card_src = (req.card_source or "").strip()
     card_tr = (req.card_translation or "").strip()
     user_inquiry = f"【学生具体疑问】: {req.question.strip()}" if req.question and req.question.strip() else "【任务】: 学生点击了一键答疑，请主动全方位深度精讲本段核心知识点。"
@@ -884,7 +978,7 @@ async def handle_ask_card(req: AskCardRequest):
                 if ans and len(ans.strip()) > 20:
                     return {"answer": ans.strip(), "source": "gemini_llm"}
             else:
-                endpoint = (req.custom_endpoint.strip() or "https://api.openai.com/v1").rstrip("/") + "/chat/completions"
+                endpoint = validate_custom_endpoint(req.custom_endpoint) + "/chat/completions"
                 headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
                 model = req.model_name.strip() or "gpt-4o-mini"
                 payload = {
@@ -909,7 +1003,7 @@ async def handle_ask_card(req: AskCardRequest):
     return {"answer": ans, "source": "adaptive_engine"}
 
 @app.post("/api/summarize")
-async def handle_summarize(req: SummarizeRequest):
+async def handle_summarize(req: SummarizeRequest, request: Request, _rl=Depends(check_rate_limit)):
     if not req.items:
         return {"overview": "暂无有效课堂记录", "takeaways": [], "glossary": []}
 
@@ -980,7 +1074,7 @@ async def handle_summarize(req: SummarizeRequest):
                 if data.get("overview") and "共记录" not in data.get("overview"):
                     return data
             else:
-                endpoint = (req.custom_endpoint.strip() or "https://api.openai.com/v1").rstrip("/") + "/chat/completions"
+                endpoint = validate_custom_endpoint(req.custom_endpoint) + "/chat/completions"
                 headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
                 model = req.model_name.strip() or "gpt-4o-mini"
                 payload = {
@@ -1345,12 +1439,15 @@ async def export_srt(session: SessionData):
     )
 
 @app.get("/api/sessions")
-def list_sessions():
+def list_sessions(client_id: str = Depends(get_client_id)):
     sessions = []
     for file in SESSIONS_DIR.glob("*.json"):
         try:
             with open(file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                # Only list sessions belonging to this browser/client.
+                if data.get("client_id") != client_id:
+                    continue
                 sessions.append({
                     "id": data.get("id"),
                     "title": data.get("title", "未命名课堂"),
@@ -1364,24 +1461,56 @@ def list_sessions():
     return sessions
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str):
-    file = SESSIONS_DIR / f"{session_id}.json"
+def get_session(session_id: str, client_id: str = Depends(get_client_id)):
+    file = safe_session_path(session_id)
     if not file.exists():
         raise HTTPException(status_code=404, detail="Session not found")
     with open(file, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    if data.get("client_id") != client_id:
+        # Don't leak existence of another client's session.
+        raise HTTPException(status_code=404, detail="Session not found")
+    return data
 
 @app.post("/api/sessions")
-def save_session(session: SessionData):
-    file = SESSIONS_DIR / f"{session.id}.json"
+def save_session(session: SessionData, client_id: str = Depends(get_client_id)):
+    # Server decides/validates the id; never trust a client-supplied id
+    # blindly for filesystem paths. Re-issue a fresh safe id if the one
+    # supplied doesn't match our strict allowlist.
+    session_id = session.id if session.id and SAFE_ID_RE.match(session.id) else uuid.uuid4().hex
+    file = safe_session_path(session_id)
+
+    # If a session with this id already exists, only the owning client
+    # may overwrite it.
+    if file.exists():
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+            if existing.get("client_id") != client_id:
+                raise HTTPException(status_code=403, detail="Not your session")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    payload = session.dict() if hasattr(session, "dict") else session.model_dump()
+    payload["id"] = session_id
+    payload["client_id"] = client_id
     with open(file, "w", encoding="utf-8") as f:
-        json.dump(session.dict(), f, ensure_ascii=False, indent=2)
-    return {"status": "ok", "id": session.id}
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return {"status": "ok", "id": session_id}
 
 @app.delete("/api/sessions/{session_id}")
-def delete_session(session_id: str):
-    file = SESSIONS_DIR / f"{session_id}.json"
+def delete_session(session_id: str, client_id: str = Depends(get_client_id)):
+    file = safe_session_path(session_id)
     if file.exists():
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+        if data.get("client_id") != client_id:
+            raise HTTPException(status_code=403, detail="Not your session")
         file.unlink()
     return {"status": "ok"}
 
