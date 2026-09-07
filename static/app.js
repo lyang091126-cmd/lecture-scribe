@@ -1,6 +1,31 @@
 /**
- * LectureScribe - 课堂智能双语速记与 AI 智能讲解工作台
+ * ============================================================================
+ * Project: LectureScribe - 课堂智能双语速记与 AI 智能讲解工作台
+ * Author: Blueberry (@lyang091126-cmd)
+ * GitHub: https://github.com/lyang091126-cmd/lecture-scribe
+ * Copyright (c) 2026 Blueberry. All rights reserved.
+ * 
+ * [版权与防剽窃严正声明 / Anti-Plagiarism Notice]
+ * 本项目由作者独立原创构思、架构与编写，享有全部著作权。
+ * 严禁在未获原作者许可的情况下进行商业倒卖、闭源转售、恶意抄袭或去除作者署名。
+ * ============================================================================
  */
+
+// 控制台作者与防剽窃安全水印
+(function printAuthorWatermark() {
+  const brandStyle = "background: linear-gradient(135deg, #4f46e5, #06b6d4); color: #ffffff; font-size: 13px; font-weight: bold; padding: 4px 10px; border-radius: 4px 0 0 4px;";
+  const authorStyle = "background: #0f172a; color: #38bdf8; font-size: 13px; font-weight: bold; padding: 4px 10px; border-radius: 0 4px 4px 0;";
+  const warnStyle = "color: #f59e0b; font-size: 11px; font-weight: 600; line-height: 1.6; margin-top: 4px;";
+  
+  console.log("%cLectureScribe AI%cAuthor: Blueberry (@lyang091126-cmd)", brandStyle, authorStyle);
+  console.log(
+    "%c🛡️【版权与防剽窃严正声明】\n" +
+    "本项目代码受严格著作权保护。未经作者书面许可，严禁商业转售、恶意抄袭或抹除原作者署名！\n" +
+    "开源官方仓库: https://github.com/lyang091126-cmd/lecture-scribe",
+    warnStyle
+  );
+})();
+
 
 // State
 const state = {

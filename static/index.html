@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="author" content="Blueberry (@lyang091126-cmd)">
+  <meta name="copyright" content="Copyright (c) 2026 Blueberry. All rights reserved.">
+  <meta name="description" content="LectureScribe - 课堂智能双语速记与 AI 智能讲解工作台 (Author: Blueberry)">
   <title>LectureScribe 课堂智能双语速记与排版工作台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,6 +23,9 @@
           <span class="logo-icon"><i data-lucide="book-open-check"></i></span>
           <span class="logo-text">LectureScribe</span>
           <span class="badge badge-accent">AI 智能讲解版</span>
+          <a href="https://github.com/lyang091126-cmd/lecture-scribe" target="_blank" rel="noopener noreferrer" class="author-watermark-pill" title="开发者: Blueberry (@lyang091126-cmd)">
+            <i data-lucide="shield-check"></i> by Blueberry
+          </a>
         </div>
         <div class="session-title-wrap">
           <input type="text" id="sessionTitleInput" value="计算机体系结构 Lecture 01" placeholder="点击修改课程名称...">
@@ -203,6 +209,24 @@
             <span class="placeholder-text">暂无归档记录</span>
           </div>
         </div>
+
+        <!-- Author Watermark Card -->
+        <div class="sidebar-watermark-card">
+          <div class="watermark-brand">
+            <i data-lucide="shield-check"></i>
+            <span>LectureScribe AI • 原创出品</span>
+          </div>
+          <div class="watermark-author">
+            <span>Author: <strong>Blueberry</strong></span>
+            <a href="https://github.com/lyang091126-cmd/lecture-scribe" target="_blank" rel="noopener noreferrer">
+              <i data-lucide="github"></i> @lyang091126-cmd
+            </a>
+          </div>
+          <div class="watermark-copy">
+            © 2026 Blueberry. All rights reserved.<br>
+            受原创版权保护，严禁商业倒卖或恶意剽窃。
+          </div>
+        </div>
       </div>
     </aside>
   </main>
@@ -279,6 +303,22 @@
             <span id="valPauseThreshold">1.8 秒</span>
           </div>
           <div class="form-help">老师停顿超过此时间，且语义基本完整时，自动聚合为新知识卡片，避免零碎断句。</div>
+        </div>
+
+        <!-- About & Copyright Protection -->
+        <div class="about-copyright-box">
+          <div class="about-header">
+            <i data-lucide="shield-check"></i>
+            <span>关于项目与原创声明 (Copyright & Anti-Theft)</span>
+          </div>
+          <p><strong>LectureScribe</strong> 专为高校讲座与多语种课堂打造，由 <strong>Blueberry (@lyang091126-cmd)</strong> 原创独立构思与研发。</p>
+          <div class="about-repo">
+            <span>官方源码仓库：</span>
+            <a href="https://github.com/lyang091126-cmd/lecture-scribe" target="_blank" rel="noopener noreferrer">https://github.com/lyang091126-cmd/lecture-scribe</a>
+          </div>
+          <div class="about-warn">
+            ⚠️ <strong>防剽窃声明</strong>：本项目享有全部原创著作权。未经原作者明确书面许可，任何个人或组织严禁将本项目二次倒卖、闭源包装牟利或恶意抄袭剽窃！
+          </div>
         </div>
       </div>
 

@@ -1,3 +1,17 @@
+"""
+=============================================================================
+Project: LectureScribe - 课堂智能双语速记与 AI 智能讲解工作台
+Author: Blueberry (@lyang091126-cmd)
+GitHub: https://github.com/lyang091126-cmd/lecture-scribe
+Copyright (c) 2026 Blueberry. All rights reserved.
+
+[版权与防剽窃严正声明 / Anti-Plagiarism Notice]
+本项目代码由作者独立设计、架构与编写，享有全部原创著作权。
+严禁在未获原作者许可的情况下进行商业倒卖、闭源包装转售、恶意抄袭或抹除原作者署名！
+如需二次开发或技术引用，请保留原作者署名与 GitHub 开源仓库地址。
+=============================================================================
+"""
+
 import os
 import re
 import json
@@ -719,6 +733,14 @@ async def export_docx(session: SessionData):
             r_head.font.size = Pt(9)
             r_head.font.color.rgb = RGBColor(79, 70, 229)
 
+    # Document Watermark & Anti-Plagiarism Notice
+    footer_p = doc.add_paragraph()
+    footer_p.paragraph_format.space_before = Pt(24)
+    footer_run = footer_p.add_run("──────────────────────────────────────────────────\n📝 本笔记由 LectureScribe 智能生成 | 开发者: Blueberry (@lyang091126-cmd) | 享有原创版权保护 • 未经许可禁止商业剽窃")
+    footer_run.font.size = Pt(8.5)
+    footer_run.font.italic = True
+    footer_run.font.color.rgb = RGBColor(148, 163, 184)
+
     buf = io.BytesIO()
     doc.save(buf)
     buf.seek(0)
@@ -791,6 +813,10 @@ async def export_markdown(session: SessionData):
             md.append(f"🏷️ **核心术语**: {kw_tags}\n")
         md.append("")
 
+    # Markdown Watermark
+    md.append("\n---\n")
+    md.append("> 🛡️ **版权与防伪水印**：本课堂双语实录由 [LectureScribe](https://github.com/lyang091126-cmd/lecture-scribe) 智能生成  \n> **原作者**: Blueberry ([@lyang091126-cmd](https://github.com/lyang091126-cmd)) | 版权所有 © 2026 | 受原创版权法保护，未经许可禁止二次打包转售或商业剽窃")
+
     content = "\n".join(md)
     safe_title = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '_', session.title)
     encoded_fn = quote(f"{safe_title}.md")
@@ -830,6 +856,13 @@ async def export_srt(session: SessionData):
         srt_lines.append(f"{tr}")
         if src:
             srt_lines.append(f"{src}")
+        srt_lines.append("")
+
+    if sorted_items:
+        last_end = float(sorted_items[-1].get("time_sec", len(sorted_items) * 5.0)) + 5.0
+        srt_lines.append(str(len(sorted_items) + 1))
+        srt_lines.append(f"{format_srt_time(last_end)} --> {format_srt_time(last_end + 3.5)}")
+        srt_lines.append("【LectureScribe 智能双语笔记 • Author: Blueberry (@lyang091126-cmd)】")
         srt_lines.append("")
 
     content = "\n".join(srt_lines)

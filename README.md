@@ -76,5 +76,21 @@ pip install -r requirements.txt
 
 ---
 
+## 👨‍💻 作者与原创版权声明 (Author & Anti-Plagiarism Notice)
+
+- **作者 / 开发者**: **Blueberry**
+- **GitHub**: [@lyang091126-cmd](https://github.com/lyang091126-cmd)
+- **项目仓库**: [https://github.com/lyang091126-cmd/lecture-scribe](https://github.com/lyang091126-cmd/lecture-scribe)
+
+> 🛡️ **防剽窃严正声明**：  
+> 本项目由作者独立设计、架构与全栈编码实现，享有完整的原创著作权与知识产权。  
+> 1. **严禁未经授权的商业转售**：不得将本项目核心代码以收费课程、闭源软件或商业工具形式二次打包转卖。  
+> 2. **禁止擅自抹除作者信息**：任何分支（Fork）、派生版本或技术借鉴，**必须**完整保留原作者署名及本仓库开源声明。  
+> 3. **合法引用**：欢迎高校学术、个人学习交流与合规二次开发，引用请标明出处。
+
+---
+
 ## 📄 开源许可证
-本项目采用 [MIT 许可证](LICENSE)。
+本项目采用 [MIT 许可证](LICENSE) 并受原创作者署名权保护。
+Copyright (c) 2026 Blueberry. All rights reserved.
+

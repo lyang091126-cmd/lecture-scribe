@@ -1308,3 +1308,118 @@ body {
     display: none;
   }
 }
+
+/* ==========================================================================
+   Author Watermark & Anti-Plagiarism Badges
+   ========================================================================== */
+.author-watermark-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(79, 70, 229, 0.08);
+  border: 1px solid rgba(79, 70, 229, 0.2);
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.author-watermark-pill:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sidebar-watermark-card {
+  margin-top: 18px;
+  padding: 12px 14px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.watermark-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.watermark-author {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.watermark-author a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+}
+
+.watermark-author a:hover {
+  text-decoration: underline;
+}
+
+.watermark-copy {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.about-copyright-box {
+  background: rgba(79, 70, 229, 0.04);
+  border: 1px solid rgba(79, 70, 229, 0.15);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-top: 16px;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.about-copyright-box .about-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.about-copyright-box .about-repo {
+  margin: 6px 0;
+  font-size: 0.76rem;
+}
+
+.about-copyright-box .about-repo a {
+  color: var(--accent);
+  text-decoration: none;
+  font-family: var(--font-mono);
+}
+
+.about-copyright-box .about-warn {
+  font-size: 0.74rem;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
