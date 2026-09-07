@@ -82,7 +82,7 @@ const ENGLISH_STOP_WORDS = new Set([
   'out', 'over', 'own', 'same', "shan't", 'she', "she'd", "she'll", "she's", 'should', "shouldn't", 'so',
   'some', 'such', 'than', 'that', "that's", 'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there',
   "there's", 'these', 'they', "they'd", "they'll", "they're", "they've", 'this', 'those', 'through', 'to',
-  'too', 'under', 'until', 'up', 'very', 'was', "wasn't", 'we', "we'd", "we'll", "we're", "we've", 'were',
+  'too', 'under', 'until', 'up', 'us', 'very', 'was', "wasn't", 'we', "we'd", "we'll", "we're", "we've", 'were',
   "weren't", 'what', "what's", 'when', "when's", 'where', "where's", 'which', 'while', 'who', "who's",
   'whom', 'why', "why's", 'with', "won't", 'would', "wouldn't", 'you', "you'd", "you'll", "you're", "you've",
   'your', 'yours', 'yourself', 'yourselves',
@@ -98,19 +98,204 @@ const ENGLISH_STOP_WORDS = new Set([
   'kind', 'sort', 'bit', 'point', 'points', 'part', 'parts', 'case', 'cases', 'time', 'times'
 ]);
 
+// 严格过滤国家代码、日常通用代词、常见口语缩写（绝不作为学术专有名词展示）
+const NON_ACADEMIC_TERMS = new Set([
+  'us', 'usa', 'uk', 'eu', 'un', 'cn', 'jp', 'de', 'fr', 'ru', 'in', 'au', 'ca', 'nz', 'kr', 'it', 'es', 'ch', 'nl', 'se', 'no', 'sg', 'hk', 'tw', 'mo',
+  'america', 'american', 'china', 'chinese', 'europe', 'european', 'japan', 'japanese', 'united states',
+  'them', 'him', 'her', 'its', 'our', 'ours', 'their', 'theirs', 'me', 'you',
+  'am', 'pm', 'ok', 'okay', 'tv', 'pc', 'vs', 'etc', 'id', 'no', 'yes', 'hi', 'hello', 'by', 'mr', 'ms', 'mrs', 'dr',
+  'iq', 'eq', 'vip', 'ceo', 'cfo', 'coo', 'cto', 'hr', 'pr', 'ad', 'bc', 'ps', 'faq', 'fyi', 'asap',
+  'diy', 'aka', 'tba', 'tbd', 'eta', 'tgif', 'lol', 'omg', 'na', 'n/a',
+  'today', 'tomorrow', 'yesterday', 'now', 'then', 'week', 'month', 'year', 'day', 'hour', 'minute', 'second',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+]);
+
+// 前端内置高频核心专业术语词典（权威中文命名与通俗背景原理解析）
+const BUILTIN_TECH_GLOSSARY = {
+  'owasp': {
+    term_en: 'OWASP',
+    term_zh: '开放式Web应用安全项目',
+    desc: '全球权威的应用安全非营利组织，其发布的 OWASP Top 10 是评估 Web 漏洞风险的事实国际标准。'
+  },
+  'mdm': {
+    term_en: 'MDM (Mobile Device Management)',
+    term_zh: '企业移动设备管理',
+    desc: '企业统一管控办公终端的系统，可远程下发安全策略（如离岗自动锁屏、防截屏、远程数据擦除）。'
+  },
+  'hipaa': {
+    term_en: 'HIPAA',
+    term_zh: '健康保险可携性与责任法案',
+    desc: '美国针对医疗健康与患者隐私制定的合规法案，对敏感健康信息（PHI）保护有极严苛的防泄密要求。'
+  },
+  'fda': {
+    term_en: 'FDA',
+    term_zh: '美国食品药品监督管理局',
+    desc: '在医疗健康系统、医用软件及关键嵌入式算法中，必须通过 FDA 极严格的合规审计与流程验证标准。'
+  },
+  'nist': {
+    term_en: 'NIST',
+    term_zh: '美国国家标准与技术研究院',
+    desc: '制定了全球公认的网络安全框架（CSF）与密码算法标准，是企业架构安全与等保合规的核心基石。'
+  },
+  'gdpr': {
+    term_en: 'GDPR',
+    term_zh: '通用数据保护条例',
+    desc: '欧盟严苛的数据隐私保护条例，强调用户的知情权与被遗忘权，对用户敏感数据跨境传输实施严格监管。'
+  },
+  'soc2': {
+    term_en: 'SOC 2',
+    term_zh: '服务机构控制报告',
+    desc: '针对云服务商与 SaaS 企业的独立合规审计报告，评估系统在安全性、可用性及机密性上的控制机制。'
+  },
+  'xss': {
+    term_en: 'XSS (Cross-Site Scripting)',
+    term_zh: '跨站脚本攻击',
+    desc: '攻击者向网页注入恶意客户端脚本，受害者浏览时在浏览器端静默执行以窃取身份 Cookie 或敏感凭证。'
+  },
+  'csrf': {
+    term_en: 'CSRF',
+    term_zh: '跨站请求伪造',
+    desc: '诱导用户在已认证的浏览器中，向受信任网站发起未经授权的恶意操作请求（如转账、修改安全邮箱）。'
+  },
+  'ddos': {
+    term_en: 'DDoS',
+    term_zh: '分布式拒绝服务攻击',
+    desc: '控制大量僵尸网络节点向目标服务器灌注海量虚假流量，耗尽网络带宽或计算资源导致合法服务瘫痪。'
+  },
+  'jwt': {
+    term_en: 'JWT (JSON Web Token)',
+    term_zh: 'JSON Web 令牌',
+    desc: '基于数字签名的轻量级、自包含跨域认证规范，广泛用于微服务架构与前后端分离的无状态会话鉴权。'
+  },
+  'oauth': {
+    term_en: 'OAuth 2.0',
+    term_zh: '开放授权协议',
+    desc: '业内标准的授权框架，允许第三方应用在不直接获取用户账号密码的前提下安全获得受限的资源访问令牌。'
+  },
+  'tcp': {
+    term_en: 'TCP',
+    term_zh: '传输控制协议',
+    desc: '面向连接、高可靠且基于字节流的传输层通信协议，具备三次握手建立连接、丢包重传及拥塞控制机制。'
+  },
+  'udp': {
+    term_en: 'UDP',
+    term_zh: '用户数据报协议',
+    desc: '无连接、开销低且实时性极高的传输层协议，广泛应用于音视频直播通话、多人联机对战与流媒体传输。'
+  },
+  'dns': {
+    term_en: 'DNS',
+    term_zh: '域名系统',
+    desc: '互联网核心基础设施，通过分布式树状查询将人类易记的域名解析为计算机底层通信的 IP 地址。'
+  },
+  'http': {
+    term_en: 'HTTP',
+    term_zh: '超文本传输协议',
+    desc: '万维网数据通信的基础协议，基于请求-响应无状态模型，是 Web 浏览器与服务端交互的基石。'
+  },
+  'https': {
+    term_en: 'HTTPS',
+    term_zh: '安全超文本传输协议',
+    desc: '在 HTTP 基础上结合 TLS/SSL 实施公钥握手与对称加密传输，保障数据机密性与防篡改完整性。'
+  },
+  'tls': {
+    term_en: 'TLS',
+    term_zh: '传输层安全性协议',
+    desc: '为互联网通信提供数据保密与完整性保护的现代密码学协议（SSL 的升级版），全面保障端到端加密。'
+  },
+  'ssl': {
+    term_en: 'SSL',
+    term_zh: '安全套接字层',
+    desc: '网络通信早期的加密协议，现已被安全性更高、算法更现代的 TLS 协议完全继承与替代。'
+  },
+  'ssh': {
+    term_en: 'SSH',
+    term_zh: '安全外壳协议',
+    desc: '在不安全网络上通过非对称密钥加密为远程计算机提供安全终端交互与文件传输的协议。'
+  },
+  'cpu': {
+    term_en: 'CPU',
+    term_zh: '中央处理器',
+    desc: '计算机的核心控制中枢与运算单元，负责解释执行程序指令、进行算术逻辑运算及统筹各部件调度。'
+  },
+  'gpu': {
+    term_en: 'GPU',
+    term_zh: '图形处理器',
+    desc: '拥有海量并行计算核心的高吞吐硬件，现已成为 AI 深度学习大规模矩阵运算与图像处理的主流算力引擎。'
+  },
+  'ram': {
+    term_en: 'RAM',
+    term_zh: '随机存取存储器',
+    desc: '与 CPU 直接高速交换数据的易失性主存储器，断电后数据即失，承载操作系统及运行中程序的活动数据。'
+  },
+  'rom': {
+    term_en: 'ROM',
+    term_zh: '只读存储器',
+    desc: '非易失性存储芯片，断电后数据永不丢失，通常用于固化存放计算机开机自检与底层启动固件（BIOS/UEFI）。'
+  },
+  'dma': {
+    term_en: 'DMA (Direct Memory Access)',
+    term_zh: '直接内存访问',
+    desc: '允许高速外设绕过 CPU 直接读写主内存，大幅卸载 CPU 搬运数据的开销，提升大吞吐数据传输效率。'
+  },
+  'cnn': {
+    term_en: 'CNN',
+    term_zh: '卷积神经网络',
+    desc: '利用局部感受野卷积核与权重共享机制提取图像网格特征的深度架构，计算机视觉领域的核心支柱。'
+  },
+  'rnn': {
+    term_en: 'RNN',
+    term_zh: '循环神经网络',
+    desc: '通过隐藏状态时间循环反馈建模时序上下文依赖的神经网络，常用于语音、自然语言等动态序列处理。'
+  },
+  'llm': {
+    term_en: 'LLM',
+    term_zh: '大语言模型',
+    desc: '基于海量文本自监督预训练的数十亿至万亿级参数深度模型，具备通用的自然语言理解、逻辑推理与生成能力。'
+  },
+  'rag': {
+    term_en: 'RAG (Retrieval-Augmented Generation)',
+    term_zh: '检索增强生成',
+    desc: '在 LLM 回答前提早从私域知识库检索高相关文档作为上下文，有效解决模型事实幻觉与知识时效性问题。'
+  },
+  'sql': {
+    term_en: 'SQL',
+    term_zh: '结构化查询语言',
+    desc: '用于在关系型数据库（如 PostgreSQL/MySQL）中定义表结构、执行增删改查及事务管理的核心标准语言。'
+  },
+  'nosql': {
+    term_en: 'NoSQL',
+    term_zh: '非关系型数据库',
+    desc: '针对海量数据高并发读写与灵活半结构化模式设计的分布式数据库（如 Redis, MongoDB, Cassandra）。'
+  },
+  'docker': {
+    term_en: 'Docker',
+    term_zh: '应用容器引擎',
+    desc: '基于 Linux Namespace 与 Cgroups 的轻量级虚拟化，将应用及其全部运行依赖打包为高可移植的自给镜像。'
+  },
+  'k8s': {
+    term_en: 'Kubernetes (K8s)',
+    term_zh: '容器集群编排系统',
+    desc: '自动化容器集群管理平台，负责海量容器的自动化部署调度、弹性横向伸缩、滚动升级与故障自愈。'
+  }
+};
+
 function isValidKeyword(kw) {
   if (!kw || typeof kw !== 'string') return false;
   kw = kw.trim().replace(/^#+/, '').trim();
-  if (kw.length < 2) return false;
+  if (kw.length < 2 || kw.length > 45) return false;
   const kwLower = kw.toLowerCase();
-  if (ENGLISH_STOP_WORDS.has(kwLower)) return false;
+  if (ENGLISH_STOP_WORDS.has(kwLower) || NON_ACADEMIC_TERMS.has(kwLower)) return false;
   if (!kw.includes(' ')) {
     if (/^\d+$/.test(kw)) return false;
-    if (kw.length < 4 && !(kw === kw.toUpperCase() && kw.length >= 2)) return false;
-    if (ENGLISH_STOP_WORDS.has(kwLower)) return false;
+    // 2-3 字母缩写检查
+    if (kw.length < 4) {
+      if (!(kw === kw.toUpperCase() && kw.length >= 2)) return false;
+      if (NON_ACADEMIC_TERMS.has(kwLower)) return false;
+    }
+    if (ENGLISH_STOP_WORDS.has(kwLower) || NON_ACADEMIC_TERMS.has(kwLower)) return false;
   } else {
     const parts = kwLower.split(/\s+/);
-    if (parts.every(p => ENGLISH_STOP_WORDS.has(p))) return false;
+    if (parts.every(p => ENGLISH_STOP_WORDS.has(p) || NON_ACADEMIC_TERMS.has(p))) return false;
   }
   return true;
 }
@@ -236,12 +421,24 @@ function loadSavedSession() {
     try {
       const data = JSON.parse(saved);
       if (data && data.items && data.items.length > 0) {
-        // Sanitize legacy items: strip stopwords (e.g. How, And, Poor)
+        // Sanitize legacy items: strip stopwords & non-academic terms (e.g. US, EU, How, And, Poor)
         data.items.forEach(it => {
           if (it.keywords && Array.isArray(it.keywords)) {
-            it.keywords = it.keywords.filter(isValidKeyword);
+            it.keywords = it.keywords.filter(kw => isValidKeyword(kw) && !NON_ACADEMIC_TERMS.has(kw.trim().toLowerCase()));
+          }
+          if (it.annotations && Array.isArray(it.annotations)) {
+            it.annotations = it.annotations.filter(a => {
+              const term = (a.term || '').trim().toLowerCase();
+              return isValidKeyword(term) && !NON_ACADEMIC_TERMS.has(term);
+            });
           }
         });
+        if (data.summary && data.summary.glossary && Array.isArray(data.summary.glossary)) {
+          data.summary.glossary = data.summary.glossary.filter(g => {
+            const term = (g.term_en || g.term_zh || '').trim().toLowerCase();
+            return isValidKeyword(term) && !NON_ACADEMIC_TERMS.has(term);
+          });
+        }
         state.session = data;
         el.sessionTitleInput.value = state.session.title || '计算机体系结构 Lecture 01';
         renderCards();
@@ -771,7 +968,7 @@ function scrollToTop() {
   el.cardsContainer.scrollTop = 0;
 }
 
-// Blackboard Outline (专有名词术语表过滤与智能提取)
+// Blackboard Outline (专有名词术语表过滤与智能提取：杜绝空壳词条，必须具备真实专业定义)
 function updateSidebarOutline() {
   if (state.session.summary && state.session.summary.glossary && state.session.summary.glossary.length > 0) {
     return;
@@ -779,25 +976,57 @@ function updateSidebarOutline() {
 
   const termMap = new Map();
   state.session.items.forEach(it => {
+    // 1. 来自 AI 详细批注（annotations）
     if (it.annotations && Array.isArray(it.annotations)) {
       it.annotations.forEach(a => {
-        if (a && a.term && !termMap.has(a.term.toLowerCase())) {
-          termMap.set(a.term.toLowerCase(), {
-            term_en: a.term,
-            term_zh: a.type || '专业术语',
-            desc: a.explanation || '课堂专业解析与背景'
-          });
+        if (!a || !a.term) return;
+        const termName = a.term.trim();
+        const termKey = termName.toLowerCase();
+        if (!isValidKeyword(termName) || NON_ACADEMIC_TERMS.has(termKey)) return;
+
+        let explanation = (a.explanation || '').trim();
+        let typeName = (a.type || '专业术语').trim();
+
+        // 若解释为模板废话或过短，尝试从内置专业词典补全
+        if (!explanation || explanation.includes('高频学术') || explanation.includes('核心概念') || explanation.length < 6) {
+          if (BUILTIN_TECH_GLOSSARY[termKey]) {
+            explanation = BUILTIN_TECH_GLOSSARY[termKey].desc;
+            if (typeName === '专业术语' && BUILTIN_TECH_GLOSSARY[termKey].term_zh) {
+              typeName = BUILTIN_TECH_GLOSSARY[termKey].term_zh;
+            }
+          }
+        }
+
+        // 仅收录具有实质背景原理解释的词条，彻底杜绝“无解释/空壳”
+        if (explanation && explanation.length >= 6 && !explanation.includes('高频学术')) {
+          if (!termMap.has(termKey)) {
+            termMap.set(termKey, {
+              term_en: termName,
+              term_zh: typeName,
+              desc: explanation
+            });
+          }
         }
       });
     }
+
+    // 2. 来自 keywords：仅当命中内置专业学术词典时才收录！坚决不生成空壳“高频学术/专业概念”
     if (it.keywords && Array.isArray(it.keywords)) {
-      it.keywords.filter(isValidKeyword).forEach(kw => {
-        if (!termMap.has(kw.toLowerCase())) {
-          termMap.set(kw.toLowerCase(), {
-            term_en: kw,
-            term_zh: '核心术语',
-            desc: '高频学术/专业概念'
-          });
+      it.keywords.forEach(kw => {
+        if (!kw || typeof kw !== 'string') return;
+        const kwClean = kw.trim().replace(/^#+/, '').trim();
+        const kwKey = kwClean.toLowerCase();
+        if (NON_ACADEMIC_TERMS.has(kwKey) || !isValidKeyword(kwClean)) return;
+
+        if (BUILTIN_TECH_GLOSSARY[kwKey]) {
+          if (!termMap.has(kwKey)) {
+            const entry = BUILTIN_TECH_GLOSSARY[kwKey];
+            termMap.set(kwKey, {
+              term_en: entry.term_en,
+              term_zh: entry.term_zh,
+              desc: entry.desc
+            });
+          }
         }
       });
     }
@@ -819,8 +1048,8 @@ function updateSidebarOutline() {
     el.glossaryList.innerHTML = `
       <div class="glossary-empty">
         <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 22px 8px; line-height: 1.6;">
-          暂未识别到复杂专有名词<br>
-          <span style="font-size: 0.74rem; opacity: 0.75;">涉及架构、标准或学术专有名词时将自动收录</span>
+          暂未收录复杂专有名词<br>
+          <span style="font-size: 0.74rem; opacity: 0.75;">遇到算法、协议、网络安全或架构专有名词时将自动解析</span>
         </p>
       </div>
     `;
@@ -873,7 +1102,31 @@ function renderSummaryUI(summary) {
     el.takeawaysList.innerHTML = summary.takeaways.map(t => `<li>${escapeHtml(t)}</li>`).join('');
   }
   if (summary.glossary && summary.glossary.length > 0) {
-    const validGlossary = summary.glossary.filter(g => isValidKeyword(g.term_en || g.term_zh));
+    const validGlossary = [];
+    const seen = new Set();
+    summary.glossary.forEach(g => {
+      const term = (g.term_en || g.term_zh || '').trim();
+      const termKey = term.toLowerCase();
+      if (!isValidKeyword(term) || NON_ACADEMIC_TERMS.has(termKey) || seen.has(termKey)) return;
+
+      let desc = (g.desc || '').trim();
+      let term_zh = (g.term_zh || '专业术语').trim();
+
+      if ((!desc || desc.includes('高频学术') || desc.includes('核心概念') || desc.length < 6) && BUILTIN_TECH_GLOSSARY[termKey]) {
+        desc = BUILTIN_TECH_GLOSSARY[termKey].desc;
+        if (term_zh === '专业术语') term_zh = BUILTIN_TECH_GLOSSARY[termKey].term_zh;
+      }
+
+      if (desc && desc.length >= 6 && !desc.includes('高频学术')) {
+        seen.add(termKey);
+        validGlossary.push({
+          term_en: g.term_en || term,
+          term_zh: term_zh,
+          desc: desc
+        });
+      }
+    });
+
     if (validGlossary.length > 0) {
       el.glossaryList.innerHTML = validGlossary.map(g => `
         <div class="glossary-item">
