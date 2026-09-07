@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LectureScribe 课堂智能双语速记与排版工作台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Top Navigation Wrapper: 保证标题栏与 P2 控制栏在页面上下滑动时始终固定不动 -->
+  <div class="top-nav-wrapper" id="topNavWrapper">
+    <!-- Header Bar -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon"><i data-lucide="book-open-check"></i></span>
+          <span class="logo-text">LectureScribe</span>
+          <span class="badge badge-accent">AI 智能讲解版</span>
+        </div>
+        <div class="session-title-wrap">
+          <input type="text" id="sessionTitleInput" value="计算机体系结构 Lecture 01" placeholder="点击修改课程名称...">
+          <span class="edit-hint"><i data-lucide="edit-3"></i></span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="status-pill" id="statusPill">
+          <span class="status-dot"></span>
+          <span id="statusText">准备就绪</span>
+        </div>
+        <div class="timer-badge" id="timerBadge">
+          <i data-lucide="clock"></i>
+          <span id="timerText">00:00:00</span>
+        </div>
+        <div class="token-tracker" id="tokenTracker" title="意群合并策略，Token 消耗极低">
+          <i data-lucide="zap"></i>
+          <span id="tokenText">已用: 0 Tokens (~¥0.00)</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <button class="btn btn-outline" id="btnStarFilter" title="仅看标星重点">
+          <i data-lucide="star"></i>
+          <span>重点回溯 (<span id="starCount">0</span>)</span>
+        </button>
+
+        <div class="dropdown">
+          <button class="btn btn-secondary" id="btnExportMenu">
+            <i data-lucide="download"></i>
+            <span>导出笔记</span>
+            <i data-lucide="chevron-down"></i>
+          </button>
+          <div class="dropdown-menu" id="exportDropdown">
+            <button class="dropdown-item" id="exportDocx">
+              <i data-lucide="file-text"></i> 导出精排 Word 文档 (.docx)
+            </button>
+            <button class="dropdown-item" id="exportMd">
+              <i data-lucide="file-code"></i> 导出 Notion/Obsidian Markdown (.md)
+            </button>
+            <button class="dropdown-item" id="exportSrt">
+              <i data-lucide="subtitles"></i> 导出双语字幕文件 (.srt)
+            </button>
+          </div>
+        </div>
+
+        <button class="btn btn-icon" id="btnSettings" title="设置 API Key 与模型">
+          <i data-lucide="settings"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- API Key Warning Banner -->
+    <div class="api-warning-banner" id="apiWarningBanner">
+      <div class="banner-left">
+        <i data-lucide="alert-triangle"></i>
+        <span id="apiWarningText">提示: API Key 校验未通过，已临时使用免费引擎保障听课。请点击检查配置！</span>
+      </div>
+      <button class="btn-banner-fix" id="btnFixApiKey">立即检查 Key</button>
+    </div>
+
+    <!-- P2: Controls Bar (固定在顶部，上下滑动时此栏目永不移动) -->
+    <div class="controls-bar" id="controlsBar">
+      <div class="controls-left">
+        <button class="btn btn-primary" id="btnToggleRecord">
+          <i data-lucide="mic" id="recordIcon"></i>
+          <span id="recordText">开始上课收音</span>
+        </button>
+
+        <!-- Audio Source Selector -->
+        <div class="select-group">
+          <label for="audioSourceSelect"><i data-lucide="volume-2"></i> 音源:</label>
+          <select id="audioSourceSelect">
+            <option value="mic" selected>🎙️ 笔记本麦克风 (实体教室)</option>
+            <option value="system">💻 电脑声音内录 (网课/录播)</option>
+          </select>
+        </div>
+
+        <!-- Language Selector -->
+        <div class="select-group">
+          <label for="sourceLangSelect"><i data-lucide="languages"></i> 讲课语言:</label>
+          <select id="sourceLangSelect">
+            <option value="en-US" selected>🇺🇸 英语 (English)</option>
+            <option value="zh-CN">🇨🇳 中文 (普通话)</option>
+            <option value="ja-JP">🇯🇵 日语 (日本語)</option>
+            <option value="de-DE">🇩🇪 德语 (Deutsch)</option>
+            <option value="fr-FR">🇫🇷 法语 (Français)</option>
+          </select>
+        </div>
+
+        <!-- Audio Waveform Monitor -->
+        <div class="audio-monitor">
+          <span class="monitor-label">收音电平:</span>
+          <canvas id="waveformCanvas" width="120" height="24"></canvas>
+        </div>
+      </div>
+
+      <div class="controls-right">
+        <div class="search-box">
+          <i data-lucide="search"></i>
+          <input type="text" id="searchInput" placeholder="搜索课上讲到的知识点/术语...">
+        </div>
+
+        <button class="btn btn-outline" id="btnGenerateSummary">
+          <i data-lucide="sparkles"></i>
+          <span>提炼课堂精要板书</span>
+        </button>
+
+        <button class="btn btn-ghost" id="btnClearNotes" title="清空并新建课堂">
+          <i data-lucide="plus-circle"></i> 新建
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Layout -->
+  <main class="main-layout">
+    <!-- Left/Center: Structured Lecture Cards Stream -->
+    <section class="cards-stream-container" id="cardsContainer">
+      <div class="cards-header-info">
+        <div class="info-tag"><i data-lucide="sparkles"></i> AI 智能排版与背景批注</div>
+        <div class="info-desc">自动过滤口头禅、提取专业术语与典故背景、深度解析难点，绝不堆砌文字</div>
+      </div>
+
+      <!-- Empty State -->
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon"><i data-lucide="mic-off"></i></div>
+        <h3>课堂速记尚未开始</h3>
+        <p>点击上方 <strong>“开始上课收音”</strong> 即可进入实时听翻与排版。<br>老师讲完每个完整概念后，将自动聚合成精排知识卡片并提供 <strong>AI 深度背景批注</strong>。</p>
+        <div class="tip-card">
+          <div class="tip-title"><i data-lucide="info"></i> 实体教室与 AI 智能讲解指南：</div>
+          <ul>
+            <li><strong>固定控制栏 (P2)</strong>：滑动查看下方笔记时，上方收音与搜索控制栏始终锁定置顶；</li>
+            <li><strong>AI 智能讲解</strong>：识别到法规标准（如 HIPAA/FDA/NIST）、缩写（如 MDM）、算法推导时，卡片下方自动附上深度讲解；</li>
+            <li><strong>遇到疑难点</strong>：随时点击卡片右下角 <strong>“问问助教”</strong>，AI 助教实时用通俗语言解答疑难。</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Dynamic Cards Stream -->
+      <div class="cards-list" id="cardsList"></div>
+    </section>
+
+    <!-- Right Sidebar: Live Blackboard Summary & Outline -->
+    <aside class="blackboard-sidebar" id="blackboardSidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">
+          <i data-lucide="clipboard-list"></i>
+          <span>课堂板书与重点大纲</span>
+        </div>
+        <button class="btn-icon-small" id="btnRefreshSummary" title="刷新提炼">
+          <i data-lucide="rotate-cw"></i>
+        </button>
+      </div>
+
+      <div class="sidebar-content">
+        <div class="summary-section">
+          <div class="section-label"><i data-lucide="compass"></i> 本节核心概览</div>
+          <div class="summary-overview-box" id="summaryOverview">
+            <span class="placeholder-text">开始收音并沉淀若干卡片后，点击“提炼课堂精要板书”自动生成。</span>
+          </div>
+        </div>
+
+        <div class="summary-section">
+          <div class="section-label"><i data-lucide="check-circle-2"></i> 核心要点清单 (Key Takeaways)</div>
+          <ul class="takeaways-list" id="takeawaysList">
+            <li class="placeholder-item">暂无要点提炼</li>
+          </ul>
+        </div>
+
+        <div class="summary-section">
+          <div class="section-label"><i data-lucide="bookmark"></i> 专有名词术语表 (Glossary)</div>
+          <div class="glossary-list" id="glossaryList">
+            <span class="placeholder-text">实时提取课程核心概念...</span>
+          </div>
+        </div>
+
+        <div class="summary-section">
+          <div class="section-label"><i data-lucide="folder-archive"></i> 历史课堂记录</div>
+          <div class="history-list" id="historyList">
+            <span class="placeholder-text">暂无归档记录</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Bottom Floating Active Row -->
+  <div class="active-dock" id="activeDock">
+    <div class="active-dock-inner">
+      <div class="dock-badge">
+        <span class="pulse-ring"></span>
+        <i data-lucide="ear"></i>
+        <span>正在听老师讲...</span>
+      </div>
+      <div class="active-text-wrapper">
+        <span class="active-source-text" id="activeSourceText">等待声音输入中...</span>
+        <span class="active-cursor">|</span>
+      </div>
+      <div class="dock-actions">
+        <button class="btn-sm btn-ghost" id="btnForceFlush" title="立刻将当前句子封存为一张卡片">
+          <i data-lucide="corner-down-left"></i> 提前分段
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i data-lucide="sliders"></i>
+          <span>模型与翻译设置</span>
+        </div>
+        <button class="btn-icon" id="btnCloseSettings"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label>翻译与 AI 讲解引擎:</label>
+          <select id="cfgProvider">
+            <option value="gemini" selected>✨ Google Gemini API (推荐: 极速高智商、深度讲解最强、超省Token)</option>
+            <option value="openai_compatible">🚀 OpenAI / DeepSeek / 硅基流动等兼容接口</option>
+            <option value="free_google">🆓 免 Key 极速模式 (基于翻译引擎 + 本地启发式讲解，0成本)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="groupApiKey">
+          <label>API Key (密钥将仅保存在您本地浏览器中):</label>
+          <input type="password" id="cfgApiKey" placeholder="输入您的 API Key (如 AIzaSy... 或 sk-...)">
+          <div class="form-help">
+            💡 <strong>API Key 说明</strong>：Gemini Key 请确保完整粘贴。一节 45 分钟大课仅消耗约 2 万 Tokens（约 <strong>¥0.01~0.03</strong>）。
+          </div>
+        </div>
+
+        <div class="form-group" id="groupModelName">
+          <label>模型选择 (Model):</label>
+          <select id="cfgModelName">
+            <option value="gemini-3.7-flash" selected>gemini-3.7-flash (🚀 强烈推荐: 高智商推理、秒级响应、超稳不限流)</option>
+            <option value="gemini-3.6-flash">gemini-3.6-flash (🌟 超稳旗舰: 学术深度讲解最强、全天候高可用)</option>
+            <option value="gemini-3.8-flash">gemini-3.8-flash (Google 3.8 Flash 最新版，遇繁忙自动秒级故障转移)</option>
+            <option value="gpt-4o-mini">gpt-4o-mini (OpenAI)</option>
+            <option value="deepseek-chat">deepseek-chat (DeepSeek)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="groupCustomEndpoint" style="display:none;">
+          <label>自定义接口 Base URL:</label>
+          <input type="text" id="cfgCustomEndpoint" placeholder="例如 https://api.deepseek.com/v1 或 https://api.siliconflow.cn/v1">
+        </div>
+
+        <div class="form-group">
+          <label>分段断句停顿敏感度 (意群聚合阈值):</label>
+          <div class="range-wrap">
+            <input type="range" id="cfgPauseThreshold" min="1.0" max="3.5" step="0.2" value="1.8">
+            <span id="valPauseThreshold">1.8 秒</span>
+          </div>
+          <div class="form-help">老师停顿超过此时间，且语义基本完整时，自动聚合为新知识卡片，避免零碎断句。</div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnCancelSettings">取消</button>
+        <button class="btn btn-primary" id="btnSaveSettings">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
