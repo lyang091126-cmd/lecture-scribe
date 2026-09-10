@@ -19,6 +19,7 @@ import asyncio
 import time
 import io
 import uuid
+import threading
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from urllib.parse import quote
@@ -56,16 +57,56 @@ SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 # --- Security: strict session/client id validation (prevents path traversal) ---
 SAFE_ID_RE = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
-def safe_session_path(session_id: str) -> Path:
+def safe_client_dir(client_id: str) -> Path:
+    """Validates client_id and returns (creating if needed) its own
+    subdirectory under SESSIONS_DIR. Sessions are stored per-client-dir
+    rather than in one flat folder so that listing a client's sessions
+    never has to scan/parse every session ever saved by every visitor."""
+    if not client_id or not SAFE_ID_RE.match(client_id):
+        raise HTTPException(status_code=400, detail="Invalid client id")
+    resolved_root = SESSIONS_DIR.resolve()
+    candidate = (SESSIONS_DIR / client_id).resolve()
+    if candidate != resolved_root and resolved_root not in candidate.parents:
+        raise HTTPException(status_code=400, detail="Invalid client id")
+    candidate.mkdir(parents=True, exist_ok=True)
+    return candidate
+
+def safe_session_path(client_id: str, session_id: str) -> Path:
     """Validates session_id against a strict allowlist pattern and resolves
-    the path, then double-checks it stays inside SESSIONS_DIR. Raises 400
-    on anything that looks like path traversal or an invalid id."""
+    the path inside the client's own directory, then double-checks it stays
+    inside that directory. Raises 400 on anything that looks like path
+    traversal or an invalid id."""
     if not session_id or not SAFE_ID_RE.match(session_id):
         raise HTTPException(status_code=400, detail="Invalid session id")
-    candidate = (SESSIONS_DIR / f"{session_id}.json").resolve()
-    if SESSIONS_DIR.resolve() not in candidate.parents:
+    client_dir = safe_client_dir(client_id)
+    candidate = (client_dir / f"{session_id}.json").resolve()
+    if client_dir not in candidate.parents:
         raise HTTPException(status_code=400, detail="Invalid session id")
     return candidate
+
+def _migrate_legacy_flat_sessions():
+    """One-time best-effort migration: earlier versions stored all
+    sessions flat in SESSIONS_DIR. Move any such leftover files into
+    their owning client's subdirectory so the new per-client layout is
+    consistent. Files with no recognizable client_id are left alone."""
+    try:
+        for f in SESSIONS_DIR.glob("*.json"):
+            try:
+                with open(f, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                cid = data.get("client_id")
+                if cid and SAFE_ID_RE.match(cid):
+                    target_dir = SESSIONS_DIR / cid
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    f.rename(target_dir / f.name)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+_migrate_legacy_flat_sessions()
+
+MAX_SESSION_ITEMS = 5000
 
 def get_client_id(request: Request) -> str:
     """Reads a per-browser client id from the X-Client-Id header. This is
@@ -94,12 +135,36 @@ app.add_middleware(
 # instance); prevents one caller from hammering the scraped Google
 # translate endpoints or your LLM key into oblivion.
 _rate_buckets: Dict[str, List[float]] = {}
+_rate_bucket_last_sweep = [0.0]
 RATE_LIMIT_MAX_REQUESTS = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
 
+def get_client_ip(request: Request) -> str:
+    """Best-effort real visitor IP. Render (like most PaaS reverse proxies)
+    terminates TLS at its edge and forwards the original client IP via
+    X-Forwarded-For; without reading it, request.client.host would be the
+    proxy's own address and every visitor would collapse into one shared
+    rate-limit bucket."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        first = fwd.split(",")[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
 def check_rate_limit(request: Request):
-    ip = request.client.host if request.client else "unknown"
+    ip = get_client_ip(request)
     now = time.time()
+
+    # Periodically sweep out IPs with no recent activity so this dict
+    # doesn't grow forever as more distinct visitors show up over time.
+    if now - _rate_bucket_last_sweep[0] > RATE_LIMIT_WINDOW_SECONDS:
+        _rate_bucket_last_sweep[0] = now
+        for k in list(_rate_buckets.keys()):
+            _rate_buckets[k] = [t for t in _rate_buckets[k] if now - t < RATE_LIMIT_WINDOW_SECONDS]
+            if not _rate_buckets[k]:
+                del _rate_buckets[k]
+
     bucket = _rate_buckets.setdefault(ip, [])
     bucket[:] = [t for t in bucket if now - t < RATE_LIMIT_WINDOW_SECONDS]
     if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
@@ -967,7 +1032,12 @@ async def handle_ask_card(req: AskCardRequest, request: Request, _rl=Depends(che
 
 字数控制在 160~320 字以内，层次分明，排版规范，让学生一眼看懂！"""
 
-    api_key = (req.api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
+    # Only ever spend the *visitor's own* API key here, never fall back to
+    # the server's own GEMINI_API_KEY/OPENAI_API_KEY env vars — otherwise
+    # every anonymous visitor who didn't paste a key would silently drain
+    # the site owner's quota/billing (this endpoint already has a solid
+    # non-LLM fallback below, same as /api/translate's design).
+    api_key = (req.api_key or "").strip()
     provider = req.provider or ("gemini" if api_key.startswith("AIzaSy") else "openai_compatible")
 
     if api_key and provider in ["gemini", "openai_compatible", "deepseek"]:
@@ -1060,7 +1130,9 @@ async def handle_summarize(req: SummarizeRequest, request: Request, _rl=Depends(
                 cleaned_list.append({"term_en": t_en, "term_zh": t_zh, "desc": desc})
         return cleaned_list
 
-    api_key = (req.api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
+    # Same rule as /api/ask-card: never fall back to the server's own env
+    # API key for anonymous visitors — only spend a key the visitor supplied.
+    api_key = (req.api_key or "").strip()
     provider = req.provider or ("gemini" if api_key.startswith("AIzaSy") else "openai_compatible")
 
     if api_key and provider in ["gemini", "openai_compatible", "deepseek"]:
@@ -1178,7 +1250,9 @@ async def handle_summarize(req: SummarizeRequest, request: Request, _rl=Depends(
     }
 
 @app.post("/api/export/docx")
-async def export_docx(session: SessionData):
+async def export_docx(session: SessionData, _rl=Depends(check_rate_limit)):
+    if len(session.items) > MAX_SESSION_ITEMS:
+        raise HTTPException(status_code=413, detail=f"课堂记录条目过多（上限 {MAX_SESSION_ITEMS} 条）")
     doc = Document()
 
     title_p = doc.add_paragraph()
@@ -1318,7 +1392,9 @@ async def export_docx(session: SessionData):
     )
 
 @app.post("/api/export/markdown")
-async def export_markdown(session: SessionData):
+async def export_markdown(session: SessionData, _rl=Depends(check_rate_limit)):
+    if len(session.items) > MAX_SESSION_ITEMS:
+        raise HTTPException(status_code=413, detail=f"课堂记录条目过多（上限 {MAX_SESSION_ITEMS} 条）")
     time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(session.created_at))
     duration_min = session.duration_seconds // 60
     duration_sec = session.duration_seconds % 60
@@ -1391,7 +1467,9 @@ async def export_markdown(session: SessionData):
     )
 
 @app.post("/api/export/srt")
-async def export_srt(session: SessionData):
+async def export_srt(session: SessionData, _rl=Depends(check_rate_limit)):
+    if len(session.items) > MAX_SESSION_ITEMS:
+        raise HTTPException(status_code=413, detail=f"课堂记录条目过多（上限 {MAX_SESSION_ITEMS} 条）")
     sorted_items = sorted(session.items, key=lambda x: (x.get('time_sec', 0), x.get('seq', 0)))
     srt_lines = []
 
@@ -1439,15 +1517,13 @@ async def export_srt(session: SessionData):
     )
 
 @app.get("/api/sessions")
-def list_sessions(client_id: str = Depends(get_client_id)):
+def list_sessions(client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
     sessions = []
-    for file in SESSIONS_DIR.glob("*.json"):
+    client_dir = safe_client_dir(client_id)
+    for file in client_dir.glob("*.json"):
         try:
             with open(file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # Only list sessions belonging to this browser/client.
-                if data.get("client_id") != client_id:
-                    continue
                 sessions.append({
                     "id": data.get("id"),
                     "title": data.get("title", "未命名课堂"),
@@ -1461,57 +1537,47 @@ def list_sessions(client_id: str = Depends(get_client_id)):
     return sessions
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str, client_id: str = Depends(get_client_id)):
-    file = safe_session_path(session_id)
+def get_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    file = safe_session_path(client_id, session_id)
     if not file.exists():
         raise HTTPException(status_code=404, detail="Session not found")
     with open(file, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if data.get("client_id") != client_id:
-        # Don't leak existence of another client's session.
-        raise HTTPException(status_code=404, detail="Session not found")
-    return data
+        return json.load(f)
+
+_session_write_lock = threading.Lock()
 
 @app.post("/api/sessions")
-def save_session(session: SessionData, client_id: str = Depends(get_client_id)):
+def save_session(session: SessionData, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    if len(session.items) > MAX_SESSION_ITEMS:
+        raise HTTPException(status_code=413, detail=f"课堂记录条目过多（上限 {MAX_SESSION_ITEMS} 条）")
+
     # Server decides/validates the id; never trust a client-supplied id
     # blindly for filesystem paths. Re-issue a fresh safe id if the one
     # supplied doesn't match our strict allowlist.
     session_id = session.id if session.id and SAFE_ID_RE.match(session.id) else uuid.uuid4().hex
-    file = safe_session_path(session_id)
-
-    # If a session with this id already exists, only the owning client
-    # may overwrite it.
-    if file.exists():
-        try:
-            with open(file, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-            if existing.get("client_id") != client_id:
-                raise HTTPException(status_code=403, detail="Not your session")
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+    file = safe_session_path(client_id, session_id)
 
     payload = session.dict() if hasattr(session, "dict") else session.model_dump()
     payload["id"] = session_id
     payload["client_id"] = client_id
-    with open(file, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    # Serialize concurrent writes and write atomically (temp file + rename)
+    # so a concurrent GET never observes a half-written file, and two
+    # near-simultaneous saves for the same session never interleave.
+    with _session_write_lock:
+        tmp_file = file.with_suffix(".json.tmp")
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, file)
+
     return {"status": "ok", "id": session_id}
 
 @app.delete("/api/sessions/{session_id}")
-def delete_session(session_id: str, client_id: str = Depends(get_client_id)):
-    file = safe_session_path(session_id)
-    if file.exists():
-        try:
-            with open(file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-        if data.get("client_id") != client_id:
-            raise HTTPException(status_code=403, detail="Not your session")
-        file.unlink()
+def delete_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    file = safe_session_path(client_id, session_id)
+    with _session_write_lock:
+        if file.exists():
+            file.unlink()
     return {"status": "ok"}
 
 app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")

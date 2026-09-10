@@ -10,7 +10,9 @@ env/
 .env
 *.local.env
 
-# Local Session History
+# Local Session History (sessions are stored per-client in subdirectories:
+# data/sessions/<client_id>/<session_id>.json)
+data/sessions/**/*.json
 data/sessions/*.json
 !data/sessions/.gitkeep
 
