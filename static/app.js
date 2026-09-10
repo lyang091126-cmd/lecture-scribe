@@ -71,6 +71,25 @@ const state = {
   }
 };
 
+// Per-browser client id sent as X-Client-Id so the server can keep this
+// browser's cloud-saved sessions (history list, cross-tab reload) separate
+// from every other visitor's, without any real login. Generated once and
+// persisted in localStorage; never sent anywhere except this site's own API.
+function getClientId() {
+  const KEY = 'lecture_scribe_client_id';
+  let id = localStorage.getItem(KEY);
+  if (id && /^[a-zA-Z0-9_-]{1,64}$/.test(id)) {
+    return id;
+  }
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    id = window.crypto.randomUUID();
+  } else {
+    id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+  localStorage.setItem(KEY, id);
+  return id;
+}
+
 const ENGLISH_STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', "aren't",
   'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by',
@@ -458,7 +477,7 @@ function persistSession() {
   localStorage.setItem('lecture_scribe_current_session', JSON.stringify(state.session));
   fetch('/api/sessions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
     body: JSON.stringify(state.session)
   }).catch(() => {});
 }
@@ -1246,7 +1265,7 @@ function renderSummaryUI(summary) {
 
 async function fetchHistorySessions() {
   try {
-    const res = await fetch('/api/sessions');
+    const res = await fetch('/api/sessions', { headers: { 'X-Client-Id': getClientId() } });
     if (res.ok) {
       const list = await res.json();
       if (list.length > 0) {
@@ -1270,7 +1289,7 @@ async function fetchHistorySessions() {
 
 async function loadHistoricalSession(id) {
   try {
-    const res = await fetch(`/api/sessions/${id}`);
+    const res = await fetch(`/api/sessions/${id}`, { headers: { 'X-Client-Id': getClientId() } });
     if (res.ok) {
       const data = await res.json();
       state.session = data;
