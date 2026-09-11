@@ -325,29 +325,29 @@ def validate_custom_endpoint(raw_endpoint: str) -> str:
 
     return endpoint
 
-async def translate_single_chunk(text: str, source_lang: str, target_lang: str) -> str:
-    # 1. Google Clients5 API (极速高可用，零限流)
+async def _try_clients5(text: str) -> Optional[str]:
     try:
         url = f"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=zh-CN&q={quote(text)}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=6.0) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
-                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list):
+                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list) and data[0]:
                     return data[0][0]
                 elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], str):
                     return data[0]
     except Exception:
         pass
+    return None
 
-    # 2. Google Translate GTX
+async def _try_google_gtx(text: str, source_lang: str, target_lang: str) -> Optional[str]:
     try:
         url = "https://translate.googleapis.com/translate_a/single"
         params = {"client": "gtx", "sl": source_lang, "tl": target_lang, "dt": "t", "q": text}
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=6.0) as client:
             resp = await client.get(url, params=params)
             if resp.status_code == 200:
                 data = resp.json()
@@ -356,6 +356,51 @@ async def translate_single_chunk(text: str, source_lang: str, target_lang: str) 
                     return "".join(parts)
     except Exception:
         pass
+    return None
+
+async def _try_mymemory(text: str, source_lang: str, target_lang: str) -> Optional[str]:
+    """A genuinely different, independently-operated free translation API
+    (not a Google endpoint) so a Google-side block/outage doesn't take out
+    every fallback at once."""
+    try:
+        sl = "en" if "en" in source_lang.lower() else source_lang
+        tl = "zh-CN" if "zh" in target_lang.lower() else target_lang
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(
+                "https://api.mymemory.translated.net/get",
+                params={"q": text[:490], "langpair": f"{sl}|{tl}"}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("responseStatus") in (200, "200"):
+                    translated = (data.get("responseData") or {}).get("translatedText", "")
+                    if translated and translated.strip():
+                        return translated
+    except Exception:
+        pass
+    return None
+
+async def translate_single_chunk(text: str, source_lang: str, target_lang: str) -> str:
+    # These are all unofficial/undocumented free endpoints (there is no
+    # official free Google Translate API), and Google actively rate-limits
+    # or hard-blocks automated traffic from shared/datacenter IPs like
+    # Render's -- clients5 and the gtx endpoint can and do go down or 429
+    # independently of each other. Try three independently-operated
+    # providers, and give the whole chain a second pass before finally
+    # giving up -- otherwise a single transient block silently produces a
+    # "translation" that's just the original untranslated text.
+    providers = (
+        lambda: _try_clients5(text),
+        lambda: _try_google_gtx(text, source_lang, target_lang),
+        lambda: _try_mymemory(text, source_lang, target_lang),
+    )
+    for pass_num in range(2):
+        for provider in providers:
+            result = await provider()
+            if result:
+                return result
+        if pass_num == 0:
+            await asyncio.sleep(0.6)
 
     return text
 
