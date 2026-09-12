@@ -40,6 +40,7 @@ const state = {
   
   // Buffers for Semantic Chunking
   activeInterimText: '',
+  cardedInterim: '',
   thoughtBuffer: [],
   pauseTimer: null,
   pauseThreshold: 1.8,
@@ -88,6 +89,91 @@ function getClientId() {
   }
   localStorage.setItem(KEY, id);
   return id;
+}
+
+function normalizeSpeech(text) {
+  return (text || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+}
+
+// The recognizer streams interim text and finalizes it later. A pause can turn
+// interim text into a card first, so drop the words a card already contains.
+function stripCardedWords(text) {
+  const carded = state.cardedInterim;
+  const norm = normalizeSpeech(text);
+  if (!carded || !norm) return text;
+  if (norm === carded || carded.startsWith(norm + ' ')) return '';
+  if (!norm.startsWith(carded + ' ')) {
+    state.cardedInterim = '';
+    return text;
+  }
+  const cardedWordCount = carded.split(' ').length;
+  const tokens = text.split(/\s+/);
+  let cut = 0;
+  for (let seen = 0; cut < tokens.length && seen < cardedWordCount; cut++) {
+    if (normalizeSpeech(tokens[cut])) seen++;
+  }
+  return tokens.slice(cut).join(' ');
+}
+
+// Keyless translation runs in the visitor's own browser: the free Google and
+// MyMemory endpoints block Render's shared datacenter IP but accept ordinary
+// user IPs (both send Access-Control-Allow-Origin: *).
+const TRANSLATION_FAILED_TEXT = '⚠️ 翻译失败：翻译服务暂时不可用';
+const TRANSLATE_CHUNK_MAX_CHARS = 450; // MyMemory rejects queries over 500 chars
+
+async function fetchJsonWithTimeout(url, timeoutMs = 6000) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function translateChunkInBrowser(text, sourceLang) {
+  try {
+    const data = await fetchJsonWithTimeout(
+      `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=zh-CN&q=${encodeURIComponent(text)}`
+    );
+    const first = Array.isArray(data) ? data[0] : null;
+    const out = Array.isArray(first) ? first[0] : first;
+    if (typeof out === 'string' && out.trim()) return out;
+  } catch (e) {}
+
+  try {
+    const data = await fetchJsonWithTimeout(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(sourceLang + '|zh-CN')}`
+    );
+    const out = data.responseData && data.responseData.translatedText;
+    if (Number(data.responseStatus) === 200 && !data.quotaFinished && out && !/^MYMEMORY WARNING/i.test(out)) {
+      return out;
+    }
+  } catch (e) {}
+
+  return '';
+}
+
+function splitForTranslation(text) {
+  const chunks = [];
+  let curr = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    for (let i = 0; i < word.length; i += TRANSLATE_CHUNK_MAX_CHARS) {
+      const piece = word.slice(i, i + TRANSLATE_CHUNK_MAX_CHARS);
+      if (curr && curr.length + 1 + piece.length > TRANSLATE_CHUNK_MAX_CHARS) {
+        chunks.push(curr);
+        curr = piece;
+      } else {
+        curr = curr ? `${curr} ${piece}` : piece;
+      }
+    }
+  }
+  if (curr) chunks.push(curr);
+  return chunks;
+}
+
+// Returns '' if any chunk fails, so the source text is never shown as a translation.
+async function translateInBrowser(text, sourceLang) {
+  if (!text) return '';
+  if (sourceLang === 'zh') return text;
+  const parts = await Promise.all(splitForTranslation(text).map(c => translateChunkInBrowser(c, sourceLang)));
+  return parts.every(Boolean) ? parts.join('') : '';
 }
 
 const ENGLISH_STOP_WORDS = new Set([
@@ -470,16 +556,45 @@ function loadSavedSession() {
   }
 }
 
-function persistSession() {
+// The cloud copy only feeds the history list, and each upload re-sends the
+// whole lecture, so batch uploads instead of sending one after every card.
+const CLOUD_SAVE_INTERVAL_MS = 20000;
+let cloudSaveTimer = null;
+let cloudSaveTarget = null;
+
+function uploadSession(session) {
+  fetch('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
+    body: JSON.stringify(session)
+  }).catch(() => {});
+}
+
+function persistSession(immediate = false) {
   state.session.title = el.sessionTitleInput.value.trim() || '未命名课程';
   state.session.updated_at = Date.now() / 1000;
   state.session.duration_seconds = state.elapsedSeconds;
   localStorage.setItem('lecture_scribe_current_session', JSON.stringify(state.session));
-  fetch('/api/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
-    body: JSON.stringify(state.session)
-  }).catch(() => {});
+
+  if (cloudSaveTarget && cloudSaveTarget !== state.session) {
+    // A different lecture is open now; don't drop the previous one's pending upload.
+    uploadSession(cloudSaveTarget);
+  }
+  cloudSaveTarget = state.session;
+
+  if (immediate) {
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+    cloudSaveTarget = null;
+    uploadSession(state.session);
+  } else if (!cloudSaveTimer) {
+    cloudSaveTimer = setTimeout(() => {
+      const session = cloudSaveTarget;
+      cloudSaveTimer = null;
+      cloudSaveTarget = null;
+      if (session) uploadSession(session);
+    }, CLOUD_SAVE_INTERVAL_MS);
+  }
 }
 
 // Audio Visualizer
@@ -583,7 +698,7 @@ function setupSpeechRecognition() {
       }
     }
     if (interim) {
-      const trimmed = interim.trim();
+      const trimmed = stripCardedWords(interim.trim());
       if (!trimmed) return;
 
       const prevTrimmed = (state.activeInterimText || '').trim();
@@ -624,6 +739,8 @@ function setupSpeechRecognition() {
       if (state.thoughtBuffer.length > 0 || (state.activeInterimText && state.activeInterimText.trim().length >= 3)) {
         flushThoughtBuffer();
       }
+      // A restarted recognizer never finalizes the previous run's interim text.
+      state.cardedInterim = '';
       try {
         recognition.start();
       } catch (e) {}
@@ -636,6 +753,10 @@ function setupSpeechRecognition() {
 }
 
 function handleFinalSentence(sentence) {
+  // This final result supersedes the interim preview of the same utterance.
+  state.activeInterimText = '';
+  sentence = stripCardedWords(sentence);
+  state.cardedInterim = '';
   if (!sentence) return;
   state.thoughtBuffer.push(sentence);
   el.activeSourceText.textContent = state.thoughtBuffer.join(' ') + ' ...';
@@ -669,11 +790,15 @@ async function flushThoughtBuffer() {
   if (!hasThought && !hasInterim) return;
 
   const rawText = (state.thoughtBuffer.join(' ') + ' ' + state.activeInterimText).trim();
+  const flushedInterim = normalizeSpeech(state.activeInterimText);
   state.thoughtBuffer = [];
   state.activeInterimText = '';
   el.activeSourceText.textContent = '等待声音输入中...';
 
   if (!rawText || rawText.length < 3) return;
+  if (flushedInterim) {
+    state.cardedInterim = state.cardedInterim ? `${state.cardedInterim} ${flushedInterim}` : flushedInterim;
+  }
 
   const cardTimeSec = Math.floor(state.elapsedSeconds);
   const timeStr = formatTime(cardTimeSec);
@@ -704,10 +829,11 @@ async function flushThoughtBuffer() {
     scrollToTop();
   }
 
+  let data = null;
   try {
     const res = await fetch('/api/translate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
       body: JSON.stringify({
         text: rawText,
         source_lang: state.session.source_lang,
@@ -718,35 +844,38 @@ async function flushThoughtBuffer() {
         model_name: state.config.modelName
       })
     });
-
     if (res.ok) {
-      const data = await res.json();
-      newCard.cleaned_source = data.cleaned_source || rawText;
-      newCard.translation = data.translation || '';
-      newCard.keywords = data.keywords || [];
-      newCard.annotations = data.annotations || [];
-      newCard.section_heading = data.section_heading || null;
-      newCard.loading = false;
-
-      // Handle API Key error notice
-      if (data.api_error) {
-        el.apiWarningText.textContent = data.api_error;
-        el.apiWarningBanner.classList.add('show');
-      } else {
-        el.apiWarningBanner.classList.remove('show');
-      }
-
-      const estTokens = Math.floor(rawText.length / 3) + Math.floor((data.translation || '').length * 1.5) + 120;
-      state.totalTokensEst += estTokens;
-      updateStats();
-
-      updateSidebarOutline();
+      data = await res.json();
+    } else {
+      console.warn('Translate API returned HTTP', res.status);
     }
   } catch (err) {
-    console.error('Translation error:', err);
-    newCard.translation = rawText;
-    newCard.loading = false;
+    console.error('Translate API error:', err);
   }
+
+  if (data) {
+    newCard.cleaned_source = data.cleaned_source || rawText;
+    newCard.keywords = data.keywords || [];
+    newCard.annotations = data.annotations || [];
+    newCard.section_heading = data.section_heading || null;
+
+    // Handle API Key error notice
+    if (data.api_error) {
+      el.apiWarningText.textContent = data.api_error;
+      el.apiWarningBanner.classList.add('show');
+    } else {
+      el.apiWarningBanner.classList.remove('show');
+    }
+  }
+
+  // The server only translates when an LLM key is configured; otherwise translate here.
+  newCard.translation = (data && data.translation) || await translateInBrowser(newCard.cleaned_source, state.session.source_lang);
+  newCard.translation_failed = !newCard.translation;
+  newCard.loading = false;
+
+  state.totalTokensEst += Math.floor(rawText.length / 3) + Math.floor(newCard.translation.length * 1.5) + 120;
+  updateStats();
+  updateSidebarOutline();
 
   persistSession();
 
@@ -754,7 +883,7 @@ async function flushThoughtBuffer() {
   const newCardEl = document.querySelector(`.lecture-card[data-id="${newCard.id}"]`);
   if (state.activeQACardId && newCardEl) {
     const transEl = newCardEl.querySelector('.card-trans-text');
-    if (transEl) transEl.textContent = newCard.translation;
+    if (transEl) transEl.textContent = newCard.translation || TRANSLATION_FAILED_TEXT;
     const sourceEl = newCardEl.querySelector('.card-source-text');
     if (sourceEl) sourceEl.textContent = newCard.cleaned_source || newCard.source_text;
 
@@ -832,7 +961,7 @@ function toggleRecording(forceState) {
     el.btnToggleRecord.classList.remove('recording');
     el.statusPill.classList.remove('recording');
     lucide.createIcons();
-    persistSession();
+    persistSession(true);
   }
 }
 
@@ -1044,7 +1173,7 @@ function renderCards() {
 
           <div class="card-translation-box">
             <span class="trans-lang-label">中文精译</span>
-            <p class="card-trans-text">${escapeHtml(card.translation)}</p>
+            <p class="card-trans-text">${card.translation_failed ? TRANSLATION_FAILED_TEXT : escapeHtml(card.translation)}</p>
           </div>
 
           ${annotationsHtml}
@@ -1187,7 +1316,7 @@ async function generateSummary() {
   try {
     const res = await fetch('/api/summarize', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
       body: JSON.stringify({
         session_title: el.sessionTitleInput.value.trim(),
         items: state.session.items,
@@ -1316,7 +1445,7 @@ async function exportFile(type) {
   try {
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
       body: JSON.stringify(state.session)
     });
 
@@ -1407,7 +1536,7 @@ function setupEventListeners() {
       renderCards();
       renderSummaryUI({ overview: '尚未生成概览', takeaways: [], glossary: [] });
       updateStats();
-      persistSession();
+      persistSession(true);
       fetchHistorySessions();
     }
   });
@@ -1450,7 +1579,7 @@ function setupEventListeners() {
 
         fetch('/api/ask-card', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
           body: JSON.stringify({
             card_source: card.cleaned_source || card.source_text,
             card_translation: card.translation,

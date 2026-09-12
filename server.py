@@ -15,7 +15,6 @@ Copyright (c) 2026 Blueberry. All rights reserved.
 import os
 import re
 import json
-import asyncio
 import time
 import io
 import uuid
@@ -130,14 +129,23 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-Client-Id"],
 )
 
-# --- Security: very small in-memory rate limiter for the free/no-key path,
-# keyed by client IP. Not distributed-safe (fine for a single Render
-# instance); prevents one caller from hammering the scraped Google
-# translate endpoints or your LLM key into oblivion.
+# --- Security: small in-memory rate limiter. Not distributed-safe (fine for
+# a single Render instance). The budget is per browser (X-Client-Id) because
+# a whole class on campus Wi-Fi shares one public IP; the much larger per-IP
+# budget only stops a single caller from rotating fake client ids.
 _rate_buckets: Dict[str, List[float]] = {}
 _rate_bucket_last_sweep = [0.0]
-RATE_LIMIT_MAX_REQUESTS = 30
 RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_PER_CLIENT = 120
+RATE_LIMIT_PER_IP = 1200
+
+def _take_rate_token(key: str, limit: int, now: float) -> bool:
+    bucket = _rate_buckets.setdefault(key, [])
+    bucket[:] = [t for t in bucket if now - t < RATE_LIMIT_WINDOW_SECONDS]
+    if len(bucket) >= limit:
+        return False
+    bucket.append(now)
+    return True
 
 def get_client_ip(request: Request) -> str:
     """Best-effort real visitor IP. Render (like most PaaS reverse proxies)
@@ -165,11 +173,11 @@ def check_rate_limit(request: Request):
             if not _rate_buckets[k]:
                 del _rate_buckets[k]
 
-    bucket = _rate_buckets.setdefault(ip, [])
-    bucket[:] = [t for t in bucket if now - t < RATE_LIMIT_WINDOW_SECONDS]
-    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+    cid = request.headers.get("x-client-id", "").strip()
+    client_key = f"cid:{cid}" if SAFE_ID_RE.match(cid) else f"ip-client:{ip}"
+    if not (_take_rate_token(f"ip:{ip}", RATE_LIMIT_PER_IP, now)
+            and _take_rate_token(client_key, RATE_LIMIT_PER_CLIENT, now)):
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试 (Too many requests)")
-    bucket.append(now)
 
 FILLER_PATTERNS_EN = [
     r'\b(um+h?|uh+h?|er+h?|ah+h?)\b',
@@ -324,110 +332,6 @@ def validate_custom_endpoint(raw_endpoint: str) -> str:
         pass  # DNS resolution issues are surfaced naturally by the actual request later
 
     return endpoint
-
-async def _try_clients5(text: str) -> Optional[str]:
-    try:
-        url = f"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=zh-CN&q={quote(text)}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        }
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], list) and data[0]:
-                    return data[0][0]
-                elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], str):
-                    return data[0]
-    except Exception:
-        pass
-    return None
-
-async def _try_google_gtx(text: str, source_lang: str, target_lang: str) -> Optional[str]:
-    try:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {"client": "gtx", "sl": source_lang, "tl": target_lang, "dt": "t", "q": text}
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            resp = await client.get(url, params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                parts = [seg[0] for seg in data[0] if seg and seg[0]]
-                if parts:
-                    return "".join(parts)
-    except Exception:
-        pass
-    return None
-
-async def _try_mymemory(text: str, source_lang: str, target_lang: str) -> Optional[str]:
-    """A genuinely different, independently-operated free translation API
-    (not a Google endpoint) so a Google-side block/outage doesn't take out
-    every fallback at once."""
-    try:
-        sl = "en" if "en" in source_lang.lower() else source_lang
-        tl = "zh-CN" if "zh" in target_lang.lower() else target_lang
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            resp = await client.get(
-                "https://api.mymemory.translated.net/get",
-                params={"q": text[:490], "langpair": f"{sl}|{tl}"}
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("responseStatus") in (200, "200"):
-                    translated = (data.get("responseData") or {}).get("translatedText", "")
-                    if translated and translated.strip():
-                        return translated
-    except Exception:
-        pass
-    return None
-
-async def translate_single_chunk(text: str, source_lang: str, target_lang: str) -> str:
-    # These are all unofficial/undocumented free endpoints (there is no
-    # official free Google Translate API), and Google actively rate-limits
-    # or hard-blocks automated traffic from shared/datacenter IPs like
-    # Render's -- clients5 and the gtx endpoint can and do go down or 429
-    # independently of each other. Try three independently-operated
-    # providers, and give the whole chain a second pass before finally
-    # giving up -- otherwise a single transient block silently produces a
-    # "translation" that's just the original untranslated text.
-    providers = (
-        lambda: _try_clients5(text),
-        lambda: _try_google_gtx(text, source_lang, target_lang),
-        lambda: _try_mymemory(text, source_lang, target_lang),
-    )
-    for pass_num in range(2):
-        for provider in providers:
-            result = await provider()
-            if result:
-                return result
-        if pass_num == 0:
-            await asyncio.sleep(0.6)
-
-    return text
-
-async def translate_via_free_engine(text: str, source_lang: str, target_lang: str) -> str:
-    if len(text) <= 300:
-        return await translate_single_chunk(text, source_lang, target_lang)
-
-    sentences = re.split(r'([.?!;\n]+)', text)
-    chunks = []
-    curr = ""
-    for s in sentences:
-        if len(curr) + len(s) < 280:
-            curr += s
-        else:
-            if curr.strip():
-                chunks.append(curr.strip())
-            curr = s
-    if curr.strip():
-        chunks.append(curr.strip())
-
-    if not chunks:
-        chunks = [text[:280]]
-
-    translated_chunks = await asyncio.gather(
-        *[translate_single_chunk(c, source_lang, target_lang) for c in chunks]
-    )
-    return " ".join(translated_chunks)
 
 ENGLISH_STOP_WORDS = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't",
@@ -909,7 +813,9 @@ async def handle_translate(req: TranslateRequest, request: Request, _rl=Depends(
             else:
                 api_error_msg = None
 
-    translated = await translate_via_free_engine(cleaned, req.source_lang, req.target_lang)
+    # Keyless translation happens in the visitor's browser: the free Google and
+    # MyMemory endpoints block Render's shared datacenter IP but accept ordinary
+    # user IPs, so here we only clean and tag the text.
     h_annotations = heuristic_annotations(cleaned)
 
     DOMAIN_TAG_PATTERNS = [
@@ -933,9 +839,9 @@ async def handle_translate(req: TranslateRequest, request: Request, _rl=Depends(
         if a.get("term"):
             candidate_kws.append(a["term"])
 
-    comb_lower = f"{cleaned} {translated}".lower()
+    cleaned_lower = cleaned.lower()
     for pat, tag_zh in DOMAIN_TAG_PATTERNS:
-        if re.search(pat, comb_lower):
+        if re.search(pat, cleaned_lower):
             candidate_kws.append(tag_zh)
 
     if "en" in req.source_lang:
@@ -950,9 +856,9 @@ async def handle_translate(req: TranslateRequest, request: Request, _rl=Depends(
         ]
         candidate_kws.extend(multi_words)
 
-    # 若仍然缺少标签，从译文中抽取有代表性的学术概念短语兜底
+    # 若仍然缺少标签，从中文原文（中文授课时）中抽取学术概念短语兜底
     if not candidate_kws:
-        zh_concepts = re.findall(r'[\u4e00-\u9fa5]{2,5}(?:机制|系统|算法|架构|模型|规范|策略|协议|逻辑)', translated)
+        zh_concepts = re.findall(r'[\u4e00-\u9fa5]{2,5}(?:机制|系统|算法|架构|模型|规范|策略|协议|逻辑)', cleaned)
         if zh_concepts:
             candidate_kws.extend(zh_concepts[:2])
         else:
@@ -962,7 +868,7 @@ async def handle_translate(req: TranslateRequest, request: Request, _rl=Depends(
 
     return {
         "cleaned_source": cleaned,
-        "translation": translated,
+        "translation": "",
         "keywords": keywords,
         "annotations": h_annotations,
         "section_heading": heading,
