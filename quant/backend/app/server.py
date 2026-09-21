@@ -20,6 +20,14 @@ from .instruments import resolve_instrument
 from .jev_client import JevClient
 from .models import ConfigPatch, ControlAction, StrategyConfig
 
+# 读取 quant/.env（若存在），让 Windows 的 run.bat 与 Linux/macOS 的 start.sh 行为一致
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+except ImportError:  # python-dotenv 是可选依赖，缺失时只用系统环境变量
+    pass
+
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",

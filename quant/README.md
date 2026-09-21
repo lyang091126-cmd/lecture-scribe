@@ -16,7 +16,7 @@
 
 ## 1. 快速开始
 
-### 方式一：一键脚本（推荐）
+### 方式一（macOS / Linux）：一键脚本
 
 ```bash
 cd quant
@@ -32,6 +32,22 @@ cp .env.example .env          # 可选：填入 TYPESAFE_API_KEY / 行情 Key
 | `./start.sh dev` | 后端 `:8000` + Vite 热更新前端 `:5173`（前端已配 `/api` 代理） |
 | `./start.sh backend` | 只跑后端（`--reload`），API 文档在 `/docs` |
 | `./start.sh test` | 跑后端测试（55 个用例） |
+
+### 方式一（Windows）：双击 `run.bat`
+
+```bat
+cd quant
+copy .env.example .env       :: 可选：填入 TYPESAFE_API_KEY / 行情 Key
+run.bat                      :: 构建前端 + 启动后端 -> http://localhost:8000
+```
+
+| 命令 | 作用 |
+| --- | --- |
+| `run.bat` | 构建前端并由后端单端口托管 → `http://localhost:8000` |
+| `run.bat dev` | 只启动后端（自动重载），前端另开 `cd frontend && npm run dev` |
+| `run.bat test` | 跑后端测试 |
+
+端口被占用时：`set PORT=8010 && run.bat`。没装 Node 也能启动，只是没有大屏，仅提供 `/docs` API。
 
 ### 方式二：Docker Compose
 
