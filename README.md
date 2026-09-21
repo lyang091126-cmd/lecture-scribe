@@ -90,17 +90,10 @@ pip install -r requirements.txt
 
 ---
 
-## 🧪 子项目：JEV 量化交易回测与模拟盘系统（`quant/`）
+## 🔗 相关项目
 
-仓库内另附一个独立子项目 [`quant/`](quant/README.md)：基于 **TypeSafe Jev 决策大模型（Choice 原语）**
-的美股 / 国内商品期货量化策略系统，包含事件驱动回测与实时模拟盘引擎、风控撮合、
-FastAPI + SSE 实时推送，以及 Vue 3 + ECharts 可视化大屏与后台参数控制面板。
-
-```bash
-cd quant && ./start.sh        # 一键启动 -> http://localhost:8000
-```
-
-它与 LectureScribe 相互独立，不共享依赖与端口，详见 `quant/README.md`。
+作者的另一个独立项目：[**jev-quant**](https://github.com/lyang091126-cmd/jev-quant) —— 基于 Jev 决策大模型的
+量化交易回测与模拟盘系统（代码不在本仓库内）。
 
 ---
 
