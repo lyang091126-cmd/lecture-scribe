@@ -90,6 +90,20 @@ pip install -r requirements.txt
 
 ---
 
+## 🧪 子项目：JEV 量化交易回测与模拟盘系统（`quant/`）
+
+仓库内另附一个独立子项目 [`quant/`](quant/README.md)：基于 **TypeSafe Jev 决策大模型（Choice 原语）**
+的美股 / 国内商品期货量化策略系统，包含事件驱动回测与实时模拟盘引擎、风控撮合、
+FastAPI + SSE 实时推送，以及 Vue 3 + ECharts 可视化大屏与后台参数控制面板。
+
+```bash
+cd quant && ./start.sh        # 一键启动 -> http://localhost:8000
+```
+
+它与 LectureScribe 相互独立，不共享依赖与端口，详见 `quant/README.md`。
+
+---
+
 ## 📄 开源许可证
 本项目采用 [MIT 许可证](LICENSE) 并受原创作者署名权保护。
 Copyright (c) 2026 Blueberry. All rights reserved.

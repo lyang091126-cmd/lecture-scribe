@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink-900 text-slate-200 antialiased;
+    font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded bg-ink-500;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-ink-600 bg-ink-800/80 shadow-lg shadow-black/20;
+  }
+  .card-title {
+    @apply flex items-center justify-between border-b border-ink-600 px-4 py-2.5 text-sm font-semibold text-slate-200;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium;
+  }
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition
+           disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent/80;
+  }
+  .btn-ghost {
+    @apply btn border border-ink-500 bg-ink-700 text-slate-300 hover:border-accent hover:text-white;
+  }
+  .field-label {
+    @apply mb-1 flex items-center justify-between text-xs text-slate-400;
+  }
+  .input {
+    @apply w-full rounded-lg border border-ink-500 bg-ink-900 px-2.5 py-1.5 text-sm text-slate-100
+           outline-none focus:border-accent;
+  }
+  .num {
+    @apply font-mono tabular-nums;
+  }
+}
