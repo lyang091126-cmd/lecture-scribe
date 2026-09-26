@@ -178,20 +178,25 @@ async function translateInBrowser(text, sourceLang) {
 
 // Re-rendering a whole lecture after every new card froze the page for ~1s
 // once a session passed a thousand cards, so only the newest stay in the DOM.
-const RENDERED_CARD_LIMIT = 120;
+// Searching or filtering is a deliberate review action, so show more there.
+const RENDERED_CARD_LIMIT = 10;
+const FILTERED_CARD_LIMIT = 120;
 
 // --- Bilingual subtitles, floating above every other window via Document
 // Picture-in-Picture so they stay readable while the slides are in front.
 const SUBTITLE_CSS = `
-  .subtitle-body { margin: 0; height: 100%; box-sizing: border-box; padding: 16px 22px;
-    background: #0f172a; color: #f8fafc; display: flex; flex-direction: column;
-    justify-content: center; gap: 10px;
+  .subtitle-body { margin: 0; height: 100%; box-sizing: border-box; padding: 14px 22px;
+    background: rgba(15, 23, 42, .55);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    color: #f8fafc; display: flex; flex-direction: column;
+    justify-content: center; gap: 8px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .7);
     font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; }
-  .sub-source { font-size: 19px; line-height: 1.4; color: #cbd5e1; }
+  .sub-source { font-size: 19px; line-height: 1.4; color: #e2e8f0; }
   .sub-translation { font-size: 26px; line-height: 1.45; font-weight: 700; color: #fde68a; }
   .subtitle-overlay { position: fixed; left: 0; right: 0; bottom: 0; height: auto;
     max-height: 42vh; overflow: auto; z-index: 2147483647;
-    border-top: 2px solid #4f46e5; box-shadow: 0 -8px 30px rgba(0, 0, 0, .45); }
+    border-top: 1px solid rgba(148, 163, 184, .35); box-shadow: 0 -8px 30px rgba(0, 0, 0, .3); }
 `;
 
 let subtitleWindow = null;
@@ -238,7 +243,9 @@ async function toggleSubtitles() {
     try {
       const win = await documentPictureInPicture.requestWindow({ width: 900, height: 240 });
       const style = win.document.createElement('style');
-      style.textContent = SUBTITLE_CSS;
+      // A floating window has no page behind it, so give the translucent
+      // panel a dark base of its own instead of the browser's white default.
+      style.textContent = SUBTITLE_CSS + '\n  html { background: #0b1220; }';
       win.document.head.appendChild(style);
       win.document.body.className = 'subtitle-body';
       win.document.body.innerHTML = '<div class="sub-source"></div><div class="sub-translation"></div>';
@@ -1176,11 +1183,20 @@ function renderCards() {
     );
   }
 
-  const hiddenCount = Math.max(0, filtered.length - RENDERED_CARD_LIMIT);
-  const visible = hiddenCount ? filtered.slice(0, RENDERED_CARD_LIMIT) : filtered;
+  const isReviewing = !!(state.searchQuery || state.filterStarredOnly);
+  const limit = isReviewing ? FILTERED_CARD_LIMIT : RENDERED_CARD_LIMIT;
+  const shown = filtered.slice(0, limit).map((card, idx) => ({ card, number: filtered.length - idx }));
+
+  // Never let the card whose AI answer is open vanish out from under the reader.
+  const activeIdx = state.activeQACardId ? filtered.findIndex(c => c.id === state.activeQACardId) : -1;
+  if (activeIdx >= limit) {
+    shown.push({ card: filtered[activeIdx], number: filtered.length - activeIdx });
+  }
+
+  const hiddenCount = Math.max(0, filtered.length - shown.length);
 
   let html = '';
-  visible.forEach((card, idx) => {
+  shown.forEach(({ card, number }) => {
     if (card.section_heading) {
       html += `
         <div class="section-divider">
@@ -1269,7 +1285,7 @@ function renderCards() {
         <div class="card-header-bar">
           <div class="card-meta-left">
             <span class="card-time-pill">⏱ ${card.time_str || '00:00'}</span>
-            <span class="card-topic-pill">知识点 #${filtered.length - idx}</span>
+            <span class="card-topic-pill">知识点 #${number}</span>
           </div>
           <button class="card-star-btn" data-action="star" data-id="${card.id}" title="${card.starred ? '取消标星' : '标星重点复习'}">
             <i data-lucide="star" ${starFill}></i>
@@ -1309,7 +1325,9 @@ function renderCards() {
   });
 
   if (hiddenCount > 0) {
-    html += `<div class="render-limit-note">仅显示最近 ${RENDERED_CARD_LIMIT} 条卡片，更早的 ${hiddenCount} 条已完整保存，可用上方搜索查找或导出笔记查看。</div>`;
+    html += `<div class="render-limit-note">${isReviewing
+      ? `仅显示前 ${limit} 条匹配结果，另有 ${hiddenCount} 条未列出，可缩小搜索范围或导出笔记查看。`
+      : `仅显示最近 ${limit} 条卡片，更早的 ${hiddenCount} 条已完整保存，可用上方搜索查找或导出笔记查看。`}</div>`;
   }
 
   el.cardsList.innerHTML = html;
