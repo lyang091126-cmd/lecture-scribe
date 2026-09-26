@@ -1677,4 +1677,18 @@ body {
   justify-content: center !important;
 }
 
+/* 仅渲染最近若干张卡片时的说明（更早的内容仍完整保存在笔记里） */
+.render-limit-note {
+  margin: 14px auto 28px;
+  padding: 10px 16px;
+  max-width: 640px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+}
+
 

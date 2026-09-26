@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
-  <link rel="stylesheet" href="styles.css?v=2.1">
+  <link rel="stylesheet" href="styles.css?v=2.2">
 </head>
 <body>
   <!-- Top Navigation Wrapper: 保证标题栏与 P2 控制栏在页面上下滑动时始终固定不动 -->
@@ -134,6 +134,11 @@
           <i data-lucide="search"></i>
           <input type="text" id="searchInput" placeholder="搜索课上讲到的知识点/术语...">
         </div>
+
+        <button class="btn btn-outline" id="btnSubtitles" title="双语字幕悬浮窗：始终显示在屏幕最上层，可拖到任意位置">
+          <i data-lucide="captions"></i>
+          <span>双语字幕</span>
+        </button>
 
         <button class="btn btn-outline" id="btnGenerateSummary">
           <i data-lucide="sparkles"></i>
@@ -379,6 +384,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=2.4"></script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>

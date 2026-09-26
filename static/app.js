@@ -176,6 +176,100 @@ async function translateInBrowser(text, sourceLang) {
   return parts.every(Boolean) ? parts.join('') : '';
 }
 
+// Re-rendering a whole lecture after every new card froze the page for ~1s
+// once a session passed a thousand cards, so only the newest stay in the DOM.
+const RENDERED_CARD_LIMIT = 120;
+
+// --- Bilingual subtitles, floating above every other window via Document
+// Picture-in-Picture so they stay readable while the slides are in front.
+const SUBTITLE_CSS = `
+  .subtitle-body { margin: 0; height: 100%; box-sizing: border-box; padding: 16px 22px;
+    background: #0f172a; color: #f8fafc; display: flex; flex-direction: column;
+    justify-content: center; gap: 10px;
+    font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; }
+  .sub-source { font-size: 19px; line-height: 1.4; color: #cbd5e1; }
+  .sub-translation { font-size: 26px; line-height: 1.45; font-weight: 700; color: #fde68a; }
+  .subtitle-overlay { position: fixed; left: 0; right: 0; bottom: 0; height: auto;
+    max-height: 42vh; overflow: auto; z-index: 2147483647;
+    border-top: 2px solid #4f46e5; box-shadow: 0 -8px 30px rgba(0, 0, 0, .45); }
+`;
+
+let subtitleWindow = null;
+let subtitleRoot = null;
+const subtitleText = { source: '', translation: '' };
+
+function renderSubtitle() {
+  if (!subtitleRoot) return;
+  const src = subtitleRoot.querySelector('.sub-source');
+  const trans = subtitleRoot.querySelector('.sub-translation');
+  if (src) src.textContent = subtitleText.source || '等待老师开口...';
+  if (trans) trans.textContent = subtitleText.translation || '中文译文会实时显示在这里';
+}
+
+function setSubtitle(source, translation) {
+  if (typeof source === 'string') subtitleText.source = source;
+  if (typeof translation === 'string') subtitleText.translation = translation;
+  renderSubtitle();
+}
+
+function updateSubtitleButton() {
+  if (el.btnSubtitles) el.btnSubtitles.classList.toggle('active', !!subtitleRoot);
+}
+
+function closeSubtitles() {
+  if (subtitleWindow) {
+    subtitleWindow.close();
+    subtitleWindow = null;
+    subtitleRoot = null;
+  } else if (subtitleRoot) {
+    subtitleRoot.remove();
+    subtitleRoot = null;
+  }
+  updateSubtitleButton();
+}
+
+async function toggleSubtitles() {
+  if (subtitleRoot) {
+    closeSubtitles();
+    return;
+  }
+
+  if (window.documentPictureInPicture) {
+    try {
+      const win = await documentPictureInPicture.requestWindow({ width: 900, height: 240 });
+      const style = win.document.createElement('style');
+      style.textContent = SUBTITLE_CSS;
+      win.document.head.appendChild(style);
+      win.document.body.className = 'subtitle-body';
+      win.document.body.innerHTML = '<div class="sub-source"></div><div class="sub-translation"></div>';
+      win.addEventListener('pagehide', () => { subtitleWindow = null; subtitleRoot = null; updateSubtitleButton(); });
+      subtitleWindow = win;
+      subtitleRoot = win.document.body;
+      renderSubtitle();
+      updateSubtitleButton();
+      showToast('双语字幕窗口已开启，可拖到屏幕任意位置，始终悬浮在最上层');
+      return;
+    } catch (e) {
+      console.warn('Picture-in-Picture subtitles unavailable:', e);
+    }
+  }
+
+  if (!document.getElementById('subtitleStyles')) {
+    const style = document.createElement('style');
+    style.id = 'subtitleStyles';
+    style.textContent = SUBTITLE_CSS;
+    document.head.appendChild(style);
+  }
+  const bar = document.createElement('div');
+  bar.className = 'subtitle-body subtitle-overlay';
+  bar.innerHTML = '<div class="sub-source"></div><div class="sub-translation"></div>';
+  document.body.appendChild(bar);
+  subtitleRoot = bar;
+  renderSubtitle();
+  updateSubtitleButton();
+  showToast('已在页面底部开启字幕条（当前浏览器不支持独立悬浮窗）');
+}
+
 const ENGLISH_STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', "aren't",
   'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by',
@@ -429,6 +523,7 @@ const el = {
   waveformCanvas: document.getElementById('waveformCanvas'),
   searchInput: document.getElementById('searchInput'),
   btnGenerateSummary: document.getElementById('btnGenerateSummary'),
+  btnSubtitles: document.getElementById('btnSubtitles'),
   btnClearNotes: document.getElementById('btnClearNotes'),
   cardsContainer: document.getElementById('cardsContainer'),
   cardsList: document.getElementById('cardsList'),
@@ -574,7 +669,12 @@ function persistSession(immediate = false) {
   state.session.title = el.sessionTitleInput.value.trim() || '未命名课程';
   state.session.updated_at = Date.now() / 1000;
   state.session.duration_seconds = state.elapsedSeconds;
-  localStorage.setItem('lecture_scribe_current_session', JSON.stringify(state.session));
+  try {
+    localStorage.setItem('lecture_scribe_current_session', JSON.stringify(state.session));
+  } catch (e) {
+    // Browser storage is full after a very long lecture; the cloud copy still has it.
+    console.warn('Local session save failed:', e);
+  }
 
   if (cloudSaveTarget && cloudSaveTarget !== state.session) {
     // A different lecture is open now; don't drop the previous one's pending upload.
@@ -704,6 +804,7 @@ function setupSpeechRecognition() {
       const prevTrimmed = (state.activeInterimText || '').trim();
       state.activeInterimText = trimmed;
       el.activeSourceText.textContent = trimmed;
+      setSubtitle(trimmed);
 
       if (trimmed !== prevTrimmed) {
         // 实时打入停顿计时器：当老师说完停顿超过设定阈值时，才聚合形成完整知识卡片，避免产生零碎断句
@@ -829,6 +930,11 @@ async function flushThoughtBuffer() {
     scrollToTop();
   }
 
+  // Start translating right away: waiting for the server first adds its round
+  // trip — and a sleeping Render instance's ~1 min wake-up — to every card.
+  const hasLlmKey = !!(state.config.apiKey && state.config.apiKey.trim());
+  const browserTranslation = hasLlmKey ? null : translateInBrowser(rawText, state.session.source_lang);
+
   let data = null;
   try {
     const res = await fetch('/api/translate', {
@@ -869,9 +975,11 @@ async function flushThoughtBuffer() {
   }
 
   // The server only translates when an LLM key is configured; otherwise translate here.
-  newCard.translation = (data && data.translation) || await translateInBrowser(newCard.cleaned_source, state.session.source_lang);
+  newCard.translation = (data && data.translation)
+    || await (browserTranslation || translateInBrowser(newCard.cleaned_source, state.session.source_lang));
   newCard.translation_failed = !newCard.translation;
   newCard.loading = false;
+  setSubtitle(newCard.cleaned_source || newCard.source_text, newCard.translation || TRANSLATION_FAILED_TEXT);
 
   state.totalTokensEst += Math.floor(rawText.length / 3) + Math.floor(newCard.translation.length * 1.5) + 120;
   updateStats();
@@ -1068,8 +1176,11 @@ function renderCards() {
     );
   }
 
+  const hiddenCount = Math.max(0, filtered.length - RENDERED_CARD_LIMIT);
+  const visible = hiddenCount ? filtered.slice(0, RENDERED_CARD_LIMIT) : filtered;
+
   let html = '';
-  filtered.forEach((card, idx) => {
+  visible.forEach((card, idx) => {
     if (card.section_heading) {
       html += `
         <div class="section-divider">
@@ -1196,6 +1307,10 @@ function renderCards() {
       </div>
     `;
   });
+
+  if (hiddenCount > 0) {
+    html += `<div class="render-limit-note">仅显示最近 ${RENDERED_CARD_LIMIT} 条卡片，更早的 ${hiddenCount} 条已完整保存，可用上方搜索查找或导出笔记查看。</div>`;
+  }
 
   el.cardsList.innerHTML = html;
   lucide.createIcons();
@@ -1513,6 +1628,7 @@ function setupEventListeners() {
     renderCards();
   });
 
+  if (el.btnSubtitles) el.btnSubtitles.addEventListener('click', toggleSubtitles);
   el.btnGenerateSummary.addEventListener('click', generateSummary);
   el.btnRefreshSummary.addEventListener('click', generateSummary);
 
