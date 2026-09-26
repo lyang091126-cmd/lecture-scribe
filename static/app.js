@@ -193,7 +193,7 @@ const SUBTITLE_CSS = `
     text-shadow: 0 1px 3px rgba(0, 0, 0, .7);
     font-family: system-ui, -apple-system, "Microsoft YaHei", sans-serif; }
   .sub-source { font-size: 19px; line-height: 1.4; color: #e2e8f0; }
-  .sub-translation { font-size: 26px; line-height: 1.45; font-weight: 700; color: #fde68a; }
+  .sub-translation { font-size: 18px; line-height: 1.45; font-weight: 700; color: #fde68a; }
   .subtitle-overlay { position: fixed; left: 0; right: 0; bottom: 0; height: auto;
     max-height: 42vh; overflow: auto; z-index: 2147483647;
     border-top: 1px solid rgba(148, 163, 184, .35); box-shadow: 0 -8px 30px rgba(0, 0, 0, .3); }
