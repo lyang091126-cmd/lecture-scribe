@@ -628,6 +628,12 @@ function loadSavedSession() {
   if (saved) {
     try {
       const data = JSON.parse(saved);
+      const savedAtMs = (data.updated_at || data.created_at || 0) * 1000;
+      if (savedAtMs && Date.now() - savedAtMs > SESSION_RETENTION_MS) {
+        localStorage.removeItem('lecture_scribe_current_session');
+        showToast('已自动清理一周前的课堂缓存');
+        return;
+      }
       if (data && data.items && data.items.length > 0) {
         // Sanitize legacy items: strip stopwords & non-academic terms (e.g. US, EU, How, And, Poor)
         data.items.forEach(it => {
@@ -661,6 +667,9 @@ function loadSavedSession() {
 // The cloud copy only feeds the history list, and each upload re-sends the
 // whole lecture, so batch uploads instead of sending one after every card.
 const CLOUD_SAVE_INTERVAL_MS = 20000;
+// Lecture notes are for the current week; older ones aren't restored locally
+// and the server drops them too.
+const SESSION_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 let cloudSaveTimer = null;
 let cloudSaveTarget = null;
 

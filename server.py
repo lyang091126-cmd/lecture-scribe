@@ -105,6 +105,33 @@ def _migrate_legacy_flat_sessions():
 
 _migrate_legacy_flat_sessions()
 
+# Lecture notes are a study aid for the current week, not an archive: drop
+# older ones so the disk and everyone's history list stay small.
+SESSION_RETENTION_SECONDS = 7 * 24 * 60 * 60
+_last_session_purge = [0.0]
+
+def purge_expired_sessions():
+    _last_session_purge[0] = time.time()
+    cutoff = _last_session_purge[0] - SESSION_RETENTION_SECONDS
+    for path in SESSIONS_DIR.glob("*/*.json"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+        except Exception:
+            continue
+    for client_dir in SESSIONS_DIR.glob("*"):
+        try:
+            if client_dir.is_dir() and not any(client_dir.iterdir()):
+                client_dir.rmdir()
+        except Exception:
+            continue
+
+def maybe_purge_expired_sessions():
+    if time.time() - _last_session_purge[0] >= 3600:
+        purge_expired_sessions()
+
+purge_expired_sessions()
+
 MAX_SESSION_ITEMS = 5000
 
 def get_client_id(request: Request) -> str:
@@ -1469,6 +1496,7 @@ async def export_srt(session: SessionData, _rl=Depends(check_rate_limit)):
 
 @app.get("/api/sessions")
 def list_sessions(client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    maybe_purge_expired_sessions()
     sessions = []
     client_dir = safe_client_dir(client_id)
     for file in client_dir.glob("*.json"):
