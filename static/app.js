@@ -217,6 +217,30 @@ function setSubtitle(source, translation) {
   renderSubtitle();
 }
 
+// Subtitles can't wait for a card: a lecturer who never pauses can talk for
+// tens of seconds before one is cut, which left the previous sentence's
+// translation sitting under a long, already-moved-on English line.
+const LIVE_SUBTITLE_INTERVAL_MS = 2000;
+const INTERIM_FLUSH_CHARS = 150;
+let liveSubtitleTimer = null;
+let liveSubtitleTurn = 0;
+let lastLiveSubtitleText = '';
+
+function queueLiveSubtitleTranslation() {
+  if (!subtitleRoot || liveSubtitleTimer) return;
+  liveSubtitleTimer = setTimeout(async () => {
+    liveSubtitleTimer = null;
+    const current = (state.activeInterimText || '').trim();
+    if (!subtitleRoot || current.length < 8) return;
+    // Re-translate a growing sentence, but not for every extra word.
+    if (current.startsWith(lastLiveSubtitleText) && current.length - lastLiveSubtitleText.length < 10) return;
+    lastLiveSubtitleText = current;
+    const turn = ++liveSubtitleTurn;
+    const translated = await translateInBrowser(current, state.session.source_lang);
+    if (translated && turn === liveSubtitleTurn) setSubtitle(undefined, translated);
+  }, LIVE_SUBTITLE_INTERVAL_MS);
+}
+
 function updateSubtitleButton() {
   if (el.btnSubtitles) el.btnSubtitles.classList.toggle('active', !!subtitleRoot);
 }
@@ -821,8 +845,12 @@ function setupSpeechRecognition() {
       state.activeInterimText = trimmed;
       el.activeSourceText.textContent = trimmed;
       setSubtitle(trimmed);
+      queueLiveSubtitleTranslation();
 
-      if (trimmed !== prevTrimmed) {
+      if (trimmed.length >= INTERIM_FLUSH_CHARS) {
+        // 老师一直不停顿时，先切一张卡片，避免整段话堆在一起迟迟不翻译
+        flushThoughtBuffer();
+      } else if (trimmed !== prevTrimmed) {
         // 实时打入停顿计时器：当老师说完停顿超过设定阈值时，才聚合形成完整知识卡片，避免产生零碎断句
         resetPauseTimer();
       }
@@ -912,6 +940,10 @@ async function flushThoughtBuffer() {
   state.activeInterimText = '';
   el.activeSourceText.textContent = '等待声音输入中...';
 
+  // Any live subtitle translation still in flight is now stale.
+  const subtitleTurn = ++liveSubtitleTurn;
+  lastLiveSubtitleText = '';
+
   if (!rawText || rawText.length < 3) return;
   if (flushedInterim) {
     state.cardedInterim = state.cardedInterim ? `${state.cardedInterim} ${flushedInterim}` : flushedInterim;
@@ -995,7 +1027,10 @@ async function flushThoughtBuffer() {
     || await (browserTranslation || translateInBrowser(newCard.cleaned_source, state.session.source_lang));
   newCard.translation_failed = !newCard.translation;
   newCard.loading = false;
-  setSubtitle(newCard.cleaned_source || newCard.source_text, newCard.translation || TRANSLATION_FAILED_TEXT);
+  // Don't overwrite subtitles that have already moved on to the next sentence.
+  if (liveSubtitleTurn === subtitleTurn) {
+    setSubtitle(newCard.cleaned_source || newCard.source_text, newCard.translation || TRANSLATION_FAILED_TEXT);
+  }
 
   state.totalTokensEst += Math.floor(rawText.length / 3) + Math.floor(newCard.translation.length * 1.5) + 120;
   updateStats();
