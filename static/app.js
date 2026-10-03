@@ -705,15 +705,38 @@ function uploadSession(session) {
   }).catch(() => {});
 }
 
-function persistSession(immediate = false) {
-  state.session.title = el.sessionTitleInput.value.trim() || '未命名课程';
-  state.session.updated_at = Date.now() / 1000;
-  state.session.duration_seconds = state.elapsedSeconds;
+// Serializing a long lecture costs milliseconds per megabyte and a 4000-card
+// session runs to several, so don't rewrite it after every single card.
+const LOCAL_SAVE_MIN_INTERVAL_MS = 3000;
+let localSaveTimer = null;
+let lastLocalSaveAt = 0;
+let localStorageFullWarned = false;
+
+function writeSessionLocally() {
+  localSaveTimer = null;
+  lastLocalSaveAt = Date.now();
   try {
     localStorage.setItem('lecture_scribe_current_session', JSON.stringify(state.session));
   } catch (e) {
     // Browser storage is full after a very long lecture; the cloud copy still has it.
     console.warn('Local session save failed:', e);
+    if (!localStorageFullWarned) {
+      localStorageFullWarned = true;
+      showToast('本地存储已满，建议点「新建」开一节新课，旧记录仍保存在云端');
+    }
+  }
+}
+
+function persistSession(immediate = false) {
+  state.session.title = el.sessionTitleInput.value.trim() || '未命名课程';
+  state.session.updated_at = Date.now() / 1000;
+  state.session.duration_seconds = state.elapsedSeconds;
+
+  if (immediate) {
+    clearTimeout(localSaveTimer);
+    writeSessionLocally();
+  } else if (!localSaveTimer) {
+    localSaveTimer = setTimeout(writeSessionLocally, Math.max(0, LOCAL_SAVE_MIN_INTERVAL_MS - (Date.now() - lastLocalSaveAt)));
   }
 
   if (cloudSaveTarget && cloudSaveTarget !== state.session) {
@@ -810,6 +833,64 @@ function drawWaveform() {
 }
 
 // Speech Recognition Engine
+// The browser's recognizer ends itself periodically and also drops out on
+// network hiccups. Restarting it once wasn't enough: start() throws while the
+// previous run is still tearing down, and that left the session dead with the
+// button still showing "recording". It can also stay nominally running while
+// quietly delivering nothing, which only a forced restart recovers from.
+const RECOGNITION_SILENCE_LIMIT_MS = 12000;
+let recognitionRestartTimer = null;
+let recognitionRestartDelay = 300;
+let recognitionWatchdogTimer = null;
+let lastRecognitionResultAt = 0;
+let lastRecoveryNoticeAt = 0;
+
+function noteRecognitionActivity() {
+  lastRecognitionResultAt = Date.now();
+}
+
+function scheduleRecognitionRestart() {
+  if (!state.isRecording || recognitionRestartTimer) return;
+  recognitionRestartTimer = setTimeout(() => {
+    recognitionRestartTimer = null;
+    if (!state.isRecording || !state.recognition) return;
+    try {
+      state.recognition.start();
+      recognitionRestartDelay = 300;
+      noteRecognitionActivity();
+    } catch (e) {
+      // Still running or still shutting down: back off and try again rather
+      // than giving up on the whole lecture.
+      recognitionRestartDelay = Math.min(recognitionRestartDelay * 2, 5000);
+      scheduleRecognitionRestart();
+    }
+  }, recognitionRestartDelay);
+}
+
+function startRecognitionWatchdog() {
+  stopRecognitionWatchdog();
+  noteRecognitionActivity();
+  recognitionWatchdogTimer = setInterval(() => {
+    if (!state.isRecording || !state.recognition) return;
+    if (Date.now() - lastRecognitionResultAt < RECOGNITION_SILENCE_LIMIT_MS) return;
+    noteRecognitionActivity();
+    try { state.recognition.stop(); } catch (e) {}
+    scheduleRecognitionRestart();
+    if (Date.now() - lastRecoveryNoticeAt > 30000) {
+      lastRecoveryNoticeAt = Date.now();
+      showToast('语音识别已自动重连，继续收音中');
+    }
+  }, 4000);
+}
+
+function stopRecognitionWatchdog() {
+  clearInterval(recognitionWatchdogTimer);
+  recognitionWatchdogTimer = null;
+  clearTimeout(recognitionRestartTimer);
+  recognitionRestartTimer = null;
+  recognitionRestartDelay = 300;
+}
+
 function setupSpeechRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -824,10 +905,12 @@ function setupSpeechRecognition() {
   state.session.source_lang = el.sourceLangSelect.value.split('-')[0];
 
   recognition.onstart = () => {
+    noteRecognitionActivity();
     updateStatus(true);
   };
 
   recognition.onresult = (event) => {
+    noteRecognitionActivity();
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const transcript = event.results[i][0].transcript;
@@ -872,10 +955,13 @@ function setupSpeechRecognition() {
 
   recognition.onerror = (event) => {
     console.warn('Speech recognition error:', event.error);
-    if (event.error === 'not-allowed') {
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
       showToast('麦克风权限被拒绝，请在浏览器地址栏允许麦克风权限！');
       toggleRecording(false);
+      return;
     }
+    // network / aborted / audio-capture / no-speech: keep the lecture alive.
+    scheduleRecognitionRestart();
   };
 
   recognition.onend = () => {
@@ -886,9 +972,7 @@ function setupSpeechRecognition() {
       }
       // A restarted recognizer never finalizes the previous run's interim text.
       state.cardedInterim = '';
-      try {
-        recognition.start();
-      } catch (e) {}
+      scheduleRecognitionRestart();
     } else {
       updateStatus(false);
     }
@@ -1034,7 +1118,7 @@ async function flushThoughtBuffer() {
 
   state.totalTokensEst += Math.floor(rawText.length / 3) + Math.floor(newCard.translation.length * 1.5) + 120;
   updateStats();
-  updateSidebarOutline();
+  scheduleSidebarOutlineUpdate();
 
   persistSession();
 
@@ -1092,6 +1176,7 @@ function toggleRecording(forceState) {
       state.recognition.lang = el.sourceLangSelect.value;
       state.recognition.start();
       state.isRecording = true;
+      startRecognitionWatchdog();
       startTimer();
       startAudioMonitoring();
       updateStatus(true);
@@ -1106,6 +1191,7 @@ function toggleRecording(forceState) {
     }
   } else {
     state.isRecording = false;
+    stopRecognitionWatchdog();
     if (state.recognition) {
       try { state.recognition.stop(); } catch (e) {}
     }
@@ -1392,6 +1478,21 @@ function scrollToTop() {
   if (hasOpenDrawer) return;
   if (el.cardsContainer.scrollTop > 60) return;
   el.cardsContainer.scrollTop = 0;
+}
+
+// Rebuilding the glossary scans every card of the lecture, so don't redo it
+// after each new one either.
+const SIDEBAR_OUTLINE_INTERVAL_MS = 3000;
+let sidebarOutlineTimer = null;
+let lastSidebarOutlineAt = 0;
+
+function scheduleSidebarOutlineUpdate() {
+  if (sidebarOutlineTimer) return;
+  sidebarOutlineTimer = setTimeout(() => {
+    sidebarOutlineTimer = null;
+    lastSidebarOutlineAt = Date.now();
+    updateSidebarOutline();
+  }, Math.max(0, SIDEBAR_OUTLINE_INTERVAL_MS - (Date.now() - lastSidebarOutlineAt)));
 }
 
 // Blackboard Outline (专有名词术语表过滤与智能提取：杜绝空壳词条，必须具备真实专业定义)
