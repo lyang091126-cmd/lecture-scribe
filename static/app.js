@@ -785,9 +785,11 @@ async function startAudioMonitoring() {
     state.analyser.fftSize = 64;
     source.connect(state.analyser);
 
+    micCaptureError = '';
     drawWaveform();
   } catch (err) {
     console.warn('Audio capture warning:', err);
+    micCaptureError = err.name || 'unknown';
     showToast('麦克风提示: ' + (err.message || '请允许麦克风权限以收音'));
   }
 }
@@ -851,6 +853,41 @@ let lastAudioAt = 0;
 let lastRecoveryNoticeAt = 0;
 let lastNetworkNoticeAt = 0;
 let recognitionNetworkErrors = 0;
+let micCaptureError = '';
+let lastMicNoticeAt = 0;
+
+// "Recording" with a flat level meter and no transcription means the audio
+// never reached the browser at all, which no amount of restarting fixes. Say
+// so in the dock, where it can't be missed, instead of looking busy.
+function reportMicrophoneProblem() {
+  if (!state.isRecording) return false;
+  let problem = '';
+  if (micCaptureError === 'NotAllowedError') {
+    problem = '麦克风权限被拒绝：点地址栏左边的图标，把麦克风改成「允许」后重新开始收音';
+  } else if (micCaptureError === 'NotFoundError' || micCaptureError === 'OverconstrainedError') {
+    problem = '系统里找不到可用的麦克风：请检查设备是否插好、是否被禁用';
+  } else if (micCaptureError) {
+    problem = '麦克风打不开（' + micCaptureError + '）：可能被其他软件占用，关掉会议/录音软件后重试';
+  } else if (!state.analyser) {
+    problem = '还没拿到麦克风，请在浏览器弹窗里允许麦克风权限';
+  } else if (Date.now() - lastAudioAt > 15000) {
+    problem = '麦克风电平一直是 0：请检查 Windows 默认输入设备选对没有、麦克风是否静音、是否被会议软件占用';
+  }
+  if (!problem) {
+    // Mic recovered: drop a warning left in the dock.
+    if (el.activeSourceText.textContent.startsWith('⚠️')) {
+      el.activeSourceText.textContent = '等待声音输入中...';
+    }
+    return false;
+  }
+
+  el.activeSourceText.textContent = '⚠️ ' + problem;
+  if (Date.now() - lastMicNoticeAt > 60000) {
+    lastMicNoticeAt = Date.now();
+    showToast('⚠️ ' + problem);
+  }
+  return true;
+}
 
 function noteRecognitionActivity() {
   lastRecognitionResultAt = Date.now();
@@ -899,6 +936,8 @@ function startRecognitionWatchdog() {
   recognitionWatchdogTimer = setInterval(() => {
     if (!state.isRecording || !state.recognition) return;
     if (currentAudioLevel() > AUDIO_ACTIVITY_LEVEL) lastAudioAt = Date.now();
+    // No audio at all is a device/permission problem; restarting won't help.
+    if (reportMicrophoneProblem()) return;
     const quietFor = Date.now() - lastRecognitionResultAt;
     if (quietFor < RECOGNITION_SILENCE_LIMIT_MS) return;
     // Restarting a healthy recognizer swallows the first words spoken after a
@@ -1223,8 +1262,6 @@ function toggleRecording(forceState) {
     state.isRecording = true;
     startRecognitionWatchdog();
     startTimer();
-    startAudioMonitoring();
-    warnIfNoMicrophone();
     updateStatus(true);
     el.recordIcon.setAttribute('data-lucide', 'square');
     el.recordText.textContent = '暂停课堂收音';
@@ -1239,10 +1276,15 @@ function toggleRecording(forceState) {
       console.warn('Start err:', e);
       scheduleRecognitionRestart();
     }
+    // Let the recognizer open the microphone first: grabbing it with
+    // getUserMedia beforehand can stop it from capturing on some systems.
+    startAudioMonitoring();
+    warnIfNoMicrophone();
     showToast('已开始课堂听翻，正在收音...');
   } else {
     state.isRecording = false;
     stopRecognitionWatchdog();
+    micCaptureError = '';
     if (state.recognition) {
       try { state.recognition.stop(); } catch (e) {}
     }
