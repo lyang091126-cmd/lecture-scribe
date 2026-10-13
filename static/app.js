@@ -839,14 +839,40 @@ function drawWaveform() {
 // button still showing "recording". It can also stay nominally running while
 // quietly delivering nothing, which only a forced restart recovers from.
 const RECOGNITION_SILENCE_LIMIT_MS = 12000;
+// A silent room explains silent transcription, so only force a restart that
+// soon when the mic is actually picking something up; otherwise wait this long.
+const RECOGNITION_HARD_LIMIT_MS = 60000;
+const AUDIO_ACTIVITY_LEVEL = 6;
 let recognitionRestartTimer = null;
 let recognitionRestartDelay = 300;
 let recognitionWatchdogTimer = null;
 let lastRecognitionResultAt = 0;
+let lastAudioAt = 0;
 let lastRecoveryNoticeAt = 0;
+let lastNetworkNoticeAt = 0;
+let recognitionNetworkErrors = 0;
 
 function noteRecognitionActivity() {
   lastRecognitionResultAt = Date.now();
+}
+
+function currentAudioLevel() {
+  if (!state.analyser) return 0;
+  const data = new Uint8Array(state.analyser.frequencyBinCount);
+  state.analyser.getByteFrequencyData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) sum += data[i];
+  return sum / data.length;
+}
+
+async function warnIfNoMicrophone() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    if (!devices.some(d => d.kind === 'audioinput')) {
+      showToast('系统里没有找到麦克风设备，请插上麦克风或检查声音输入设置');
+    }
+  } catch (e) {}
 }
 
 function scheduleRecognitionRestart() {
@@ -872,7 +898,13 @@ function startRecognitionWatchdog() {
   noteRecognitionActivity();
   recognitionWatchdogTimer = setInterval(() => {
     if (!state.isRecording || !state.recognition) return;
-    if (Date.now() - lastRecognitionResultAt < RECOGNITION_SILENCE_LIMIT_MS) return;
+    if (currentAudioLevel() > AUDIO_ACTIVITY_LEVEL) lastAudioAt = Date.now();
+    const quietFor = Date.now() - lastRecognitionResultAt;
+    if (quietFor < RECOGNITION_SILENCE_LIMIT_MS) return;
+    // Restarting a healthy recognizer swallows the first words spoken after a
+    // pause, so only do it early when the mic says someone is talking.
+    const soundRecently = Date.now() - lastAudioAt < RECOGNITION_SILENCE_LIMIT_MS;
+    if (!soundRecently && quietFor < RECOGNITION_HARD_LIMIT_MS) return;
     noteRecognitionActivity();
     try { state.recognition.stop(); } catch (e) {}
     scheduleRecognitionRestart();
@@ -911,6 +943,7 @@ function setupSpeechRecognition() {
 
   recognition.onresult = (event) => {
     noteRecognitionActivity();
+    recognitionNetworkErrors = 0;
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       const transcript = event.results[i][0].transcript;
@@ -960,7 +993,19 @@ function setupSpeechRecognition() {
       toggleRecording(false);
       return;
     }
-    // network / aborted / audio-capture / no-speech: keep the lecture alive.
+    if (event.error === 'audio-capture') {
+      showToast('没有检测到麦克风输入，请检查系统声音设置或换一个麦克风后重新开始收音');
+      toggleRecording(false);
+      return;
+    }
+    if (event.error === 'network') {
+      recognitionNetworkErrors++;
+      if (recognitionNetworkErrors >= 3 && Date.now() - lastNetworkNoticeAt > 30000) {
+        lastNetworkNoticeAt = Date.now();
+        showToast('语音识别连不上服务器：Chrome 的语音转写需要访问 Google，请检查网络或 VPN');
+      }
+    }
+    // network / aborted / no-speech: keep the lecture alive.
     scheduleRecognitionRestart();
   };
 
@@ -1172,23 +1217,29 @@ function toggleRecording(forceState) {
       state.recognition = setupSpeechRecognition();
       if (!state.recognition) return;
     }
+    // Enter the recording state first. start() throws while a previous run is
+    // still tearing down, and that used to skip everything below it: no timer,
+    // no mic monitoring, button still saying "start", nothing retried.
+    state.isRecording = true;
+    startRecognitionWatchdog();
+    startTimer();
+    startAudioMonitoring();
+    warnIfNoMicrophone();
+    updateStatus(true);
+    el.recordIcon.setAttribute('data-lucide', 'square');
+    el.recordText.textContent = '暂停课堂收音';
+    el.btnToggleRecord.classList.add('recording');
+    el.statusPill.classList.add('recording');
+    lucide.createIcons();
+
     try {
       state.recognition.lang = el.sourceLangSelect.value;
       state.recognition.start();
-      state.isRecording = true;
-      startRecognitionWatchdog();
-      startTimer();
-      startAudioMonitoring();
-      updateStatus(true);
-      el.recordIcon.setAttribute('data-lucide', 'square');
-      el.recordText.textContent = '暂停课堂收音';
-      el.btnToggleRecord.classList.add('recording');
-      el.statusPill.classList.add('recording');
-      lucide.createIcons();
-      showToast('已开始课堂听翻，正在收音...');
     } catch (e) {
       console.warn('Start err:', e);
+      scheduleRecognitionRestart();
     }
+    showToast('已开始课堂听翻，正在收音...');
   } else {
     state.isRecording = false;
     stopRecognitionWatchdog();
