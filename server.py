@@ -18,6 +18,7 @@ import json
 import time
 import io
 import uuid
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -61,7 +62,7 @@ _last_session_purge = [0.0]
 
 async def maybe_purge_expired_sessions():
     now = time.time()
-    if now - _last_session_purge[0] < 3600:
+    if now - _last_session_purge[0] < 3600 or now < _storage_down_until[0]:
         return
     _last_session_purge[0] = now
     try:
@@ -84,9 +85,17 @@ def get_client_id(request: Request) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await db.init_db()
-    print("[Storage] Postgres" if db.using_postgres
-          else "[Storage] local SQLite — set DATABASE_URL for storage that survives restarts")
+    try:
+        # A database that is merely unreachable would otherwise hang startup
+        # until the platform gives up and marks the whole deploy failed.
+        await asyncio.wait_for(db.init_db(), timeout=20)
+        print("[Storage] Postgres" if db.using_postgres
+              else "[Storage] local SQLite — set DATABASE_URL for storage that survives restarts")
+    except Exception as e:
+        # Recording, translation and subtitles don't need the database, so a
+        # bad DATABASE_URL must not stop the whole service from starting.
+        db.init_error = f"{type(e).__name__}: {e}"
+        print(f"[Storage] unavailable ({db.init_error}); lecture history is off, everything else still works")
     yield
 
 app = FastAPI(title="LectureScribe - 课堂智能双语速记与排版系统", lifespan=lifespan)
@@ -1440,6 +1449,21 @@ async def export_srt(session: SessionData, _rl=Depends(check_rate_limit)):
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_fn}"}
     )
 
+# Once the database is unreachable, every request would otherwise sit through
+# its own connection timeout. Remember the failure briefly and answer at once.
+STORAGE_COOLDOWN_SECONDS = 30
+_storage_down_until = [0.0]
+STORAGE_DOWN_MESSAGE = "云端课堂历史暂时不可用（不影响本地记录与实时翻译）"
+
+def storage_unavailable(e: Exception) -> HTTPException:
+    _storage_down_until[0] = time.time() + STORAGE_COOLDOWN_SECONDS
+    print(f"[Sessions] storage error: {type(e).__name__}: {e}")
+    return HTTPException(status_code=503, detail=STORAGE_DOWN_MESSAGE)
+
+def ensure_storage_ready():
+    if time.time() < _storage_down_until[0]:
+        raise HTTPException(status_code=503, detail=STORAGE_DOWN_MESSAGE)
+
 @app.get("/api/health")
 async def health():
     """Says which storage backend is actually in use. Without a database the
@@ -1447,12 +1471,12 @@ async def health():
     checkable from outside rather than buried in startup logs."""
     storage = "postgres" if db.using_postgres else "ephemeral-sqlite"
     reachable = True
-    detail = ""
+    detail = db.init_error
     try:
         await db.list_sessions("__healthcheck__")
     except Exception as e:
         reachable = False
-        detail = type(e).__name__
+        detail = f"{type(e).__name__}: {e}"[:300]
     return {
         "status": "ok" if reachable else "degraded",
         "storage": storage,
@@ -1464,14 +1488,22 @@ async def health():
 
 @app.get("/api/sessions")
 async def list_sessions(client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    ensure_storage_ready()
     await maybe_purge_expired_sessions()
-    return await db.list_sessions(client_id)
+    try:
+        return await db.list_sessions(client_id)
+    except Exception as e:
+        raise storage_unavailable(e)
 
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    ensure_storage_ready()
     if not SAFE_ID_RE.match(session_id):
         raise HTTPException(status_code=400, detail="Invalid session id")
-    data = await db.get_session(client_id, session_id)
+    try:
+        data = await db.get_session(client_id, session_id)
+    except Exception as e:
+        raise storage_unavailable(e)
     if data is None:
         # Don't leak whether someone else's lecture has this id.
         raise HTTPException(status_code=404, detail="Session not found")
@@ -1479,6 +1511,7 @@ async def get_session(session_id: str, client_id: str = Depends(get_client_id), 
 
 @app.post("/api/sessions")
 async def save_session(session: SessionData, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    ensure_storage_ready()
     if len(session.items) > MAX_SESSION_ITEMS:
         raise HTTPException(status_code=413, detail=f"课堂记录条目过多（上限 {MAX_SESSION_ITEMS} 条）")
 
@@ -1492,24 +1525,40 @@ async def save_session(session: SessionData, client_id: str = Depends(get_client
         await db.save_session(client_id, session_id, payload)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Not your session")
+    except Exception as e:
+        raise storage_unavailable(e)
 
     return {"status": "ok", "id": session_id}
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    ensure_storage_ready()
     if not SAFE_ID_RE.match(session_id):
         raise HTTPException(status_code=400, detail="Invalid session id")
     try:
         await db.delete_session(client_id, session_id)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Not your session")
+    except Exception as e:
+        raise storage_unavailable(e)
     return {"status": "ok"}
 
 app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")
 
 if __name__ == "__main__":
+    import asyncio
+    import sys
     import uvicorn
+
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")
     print(f"Starting LectureScribe server on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
+
+    if sys.platform == "win32":
+        # psycopg's async mode refuses to run on Windows' default Proactor
+        # loop, and uvicorn.run() installs one whatever the policy says, so
+        # drive the server from a selector loop of our own instead.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.run(uvicorn.Server(uvicorn.Config(app, host=host, port=port)).serve())
+    else:
+        uvicorn.run(app, host=host, port=port)

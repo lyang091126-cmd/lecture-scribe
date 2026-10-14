@@ -49,25 +49,25 @@ class LectureSession(Base):
 
 
 def _normalize_url(raw: str) -> Tuple[str, Dict[str, Any]]:
-    """Supabase hands out a libpq URL, but SQLAlchemy needs the asyncpg driver
-    and asyncpg takes TLS as a connect argument instead of a query parameter."""
+    """Supabase hands out a plain libpq URL; SQLAlchemy needs an explicit
+    async driver. psycopg ships prebuilt binaries, which build far more
+    reliably on a free deploy than a driver that compiles from source."""
     url = raw.strip()
     connect_args: Dict[str, Any] = {}
 
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
     if url.startswith("postgresql://"):
-        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
-    if "sslmode=" in url:
-        url = re.sub(r"[?&]sslmode=[^&]*", "", url).rstrip("?&")
-    if url.startswith("postgresql+asyncpg://"):
-        connect_args["ssl"] = True
-        # Supabase's direct host is IPv6-only, so Render has to go through the
-        # connection pooler -- and pgbouncer rejects the prepared statements
-        # asyncpg caches by default.
-        if "pooler.supabase.com" in url or ":6543/" in url:
-            connect_args["statement_cache_size"] = 0
-            connect_args["prepared_statement_cache_size"] = 0
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    if url.startswith("postgresql+psycopg://"):
+        if "sslmode=" not in url:
+            url += ("&" if "?" in url else "?") + "sslmode=require"
+        # Supabase's direct host is IPv6-only, so Render goes through the
+        # connection pooler, and pgbouncer rejects server-side prepared
+        # statements.
+        connect_args["prepare_threshold"] = None
+        # Never let an unreachable database hang startup or a request.
+        connect_args["connect_timeout"] = 5
 
     return url, connect_args
 
@@ -79,11 +79,28 @@ else:
     _url, _connect_args = f"sqlite+aiosqlite:///{(DATA_DIR / 'lecture.db').as_posix()}", {}
 
 using_postgres = _url.startswith("postgresql")
-engine = create_async_engine(_url, pool_pre_ping=True, connect_args=_connect_args)
-SessionMaker = async_sessionmaker(engine, expire_on_commit=False)
+
+# A database that can't be reached must not take the lecture tool down with
+# it: recording, translation and subtitles don't need it, and /api/health
+# reports what went wrong instead of the whole deploy failing to boot.
+init_error = ""
+engine = None
+SessionMaker = None
+
+try:
+    engine = create_async_engine(_url, pool_pre_ping=True, connect_args=_connect_args)
+    SessionMaker = async_sessionmaker(engine, expire_on_commit=False)
+except Exception as e:  # bad URL, missing driver, ...
+    init_error = f"{type(e).__name__}: {e}"
+
+
+def _require_db():
+    if SessionMaker is None:
+        raise RuntimeError(init_error or "database is not configured")
 
 
 async def init_db() -> None:
+    _require_db()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
