@@ -18,7 +18,7 @@ import json
 import time
 import io
 import uuid
-import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from urllib.parse import quote
@@ -36,6 +36,8 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+import db
+
 BASE_DIR = Path(__file__).resolve().parent
 env_file = BASE_DIR / ".env"
 if env_file.exists():
@@ -49,88 +51,25 @@ if env_file.exists():
     except Exception:
         pass
 
-DATA_DIR = BASE_DIR / "data"
-SESSIONS_DIR = DATA_DIR / "sessions"
-SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-
-# --- Security: strict session/client id validation (prevents path traversal) ---
+# --- Security: strict session/client id validation ---
 SAFE_ID_RE = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
-def safe_client_dir(client_id: str) -> Path:
-    """Validates client_id and returns (creating if needed) its own
-    subdirectory under SESSIONS_DIR. Sessions are stored per-client-dir
-    rather than in one flat folder so that listing a client's sessions
-    never has to scan/parse every session ever saved by every visitor."""
-    if not client_id or not SAFE_ID_RE.match(client_id):
-        raise HTTPException(status_code=400, detail="Invalid client id")
-    resolved_root = SESSIONS_DIR.resolve()
-    candidate = (SESSIONS_DIR / client_id).resolve()
-    if candidate != resolved_root and resolved_root not in candidate.parents:
-        raise HTTPException(status_code=400, detail="Invalid client id")
-    candidate.mkdir(parents=True, exist_ok=True)
-    return candidate
-
-def safe_session_path(client_id: str, session_id: str) -> Path:
-    """Validates session_id against a strict allowlist pattern and resolves
-    the path inside the client's own directory, then double-checks it stays
-    inside that directory. Raises 400 on anything that looks like path
-    traversal or an invalid id."""
-    if not session_id or not SAFE_ID_RE.match(session_id):
-        raise HTTPException(status_code=400, detail="Invalid session id")
-    client_dir = safe_client_dir(client_id)
-    candidate = (client_dir / f"{session_id}.json").resolve()
-    if client_dir not in candidate.parents:
-        raise HTTPException(status_code=400, detail="Invalid session id")
-    return candidate
-
-def _migrate_legacy_flat_sessions():
-    """One-time best-effort migration: earlier versions stored all
-    sessions flat in SESSIONS_DIR. Move any such leftover files into
-    their owning client's subdirectory so the new per-client layout is
-    consistent. Files with no recognizable client_id are left alone."""
-    try:
-        for f in SESSIONS_DIR.glob("*.json"):
-            try:
-                with open(f, "r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-                cid = data.get("client_id")
-                if cid and SAFE_ID_RE.match(cid):
-                    target_dir = SESSIONS_DIR / cid
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    f.rename(target_dir / f.name)
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-_migrate_legacy_flat_sessions()
-
 # Lecture notes are a study aid for the current week, not an archive: drop
-# older ones so the disk and everyone's history list stay small.
+# older ones so the database and everyone's history list stay small.
 SESSION_RETENTION_SECONDS = 7 * 24 * 60 * 60
 _last_session_purge = [0.0]
 
-def purge_expired_sessions():
-    _last_session_purge[0] = time.time()
-    cutoff = _last_session_purge[0] - SESSION_RETENTION_SECONDS
-    for path in SESSIONS_DIR.glob("*/*.json"):
-        try:
-            if path.stat().st_mtime < cutoff:
-                path.unlink()
-        except Exception:
-            continue
-    for client_dir in SESSIONS_DIR.glob("*"):
-        try:
-            if client_dir.is_dir() and not any(client_dir.iterdir()):
-                client_dir.rmdir()
-        except Exception:
-            continue
-
-def maybe_purge_expired_sessions():
-    if time.time() - _last_session_purge[0] >= 3600:
-        purge_expired_sessions()
-
-purge_expired_sessions()
+async def maybe_purge_expired_sessions():
+    now = time.time()
+    if now - _last_session_purge[0] < 3600:
+        return
+    _last_session_purge[0] = now
+    try:
+        removed = await db.purge_expired(SESSION_RETENTION_SECONDS, now)
+        if removed:
+            print(f"[Sessions] purged {removed} lecture(s) older than 7 days")
+    except Exception as e:
+        print(f"[Sessions] purge failed: {e}")
 
 MAX_SESSION_ITEMS = 5000
 
@@ -143,7 +82,14 @@ def get_client_id(request: Request) -> str:
         raise HTTPException(status_code=400, detail="Missing or invalid X-Client-Id header")
     return cid
 
-app = FastAPI(title="LectureScribe - 课堂智能双语速记与排版系统")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.init_db()
+    print("[Storage] Postgres" if db.using_postgres
+          else "[Storage] local SQLite — set DATABASE_URL for storage that survives restarts")
+    yield
+
+app = FastAPI(title="LectureScribe - 课堂智能双语速记与排版系统", lifespan=lifespan)
 
 # --- Security: CORS. Wildcard origin + credentials is an invalid/unsafe
 # combination; we only ever read a custom header (no cookies), so
@@ -1495,68 +1441,46 @@ async def export_srt(session: SessionData, _rl=Depends(check_rate_limit)):
     )
 
 @app.get("/api/sessions")
-def list_sessions(client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
-    maybe_purge_expired_sessions()
-    sessions = []
-    client_dir = safe_client_dir(client_id)
-    for file in client_dir.glob("*.json"):
-        try:
-            with open(file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                sessions.append({
-                    "id": data.get("id"),
-                    "title": data.get("title", "未命名课堂"),
-                    "created_at": data.get("created_at"),
-                    "item_count": len(data.get("items", [])),
-                    "duration_seconds": data.get("duration_seconds", 0)
-                })
-        except Exception:
-            continue
-    sessions.sort(key=lambda x: x.get("created_at", 0), reverse=True)
-    return sessions
+async def list_sessions(client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    await maybe_purge_expired_sessions()
+    return await db.list_sessions(client_id)
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
-    file = safe_session_path(client_id, session_id)
-    if not file.exists():
+async def get_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    if not SAFE_ID_RE.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id")
+    data = await db.get_session(client_id, session_id)
+    if data is None:
+        # Don't leak whether someone else's lecture has this id.
         raise HTTPException(status_code=404, detail="Session not found")
-    with open(file, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-_session_write_lock = threading.Lock()
+    return data
 
 @app.post("/api/sessions")
-def save_session(session: SessionData, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+async def save_session(session: SessionData, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
     if len(session.items) > MAX_SESSION_ITEMS:
         raise HTTPException(status_code=413, detail=f"课堂记录条目过多（上限 {MAX_SESSION_ITEMS} 条）")
 
-    # Server decides/validates the id; never trust a client-supplied id
-    # blindly for filesystem paths. Re-issue a fresh safe id if the one
-    # supplied doesn't match our strict allowlist.
+    # Never trust a client-supplied id: re-issue one that doesn't match the
+    # strict allowlist.
     session_id = session.id if session.id and SAFE_ID_RE.match(session.id) else uuid.uuid4().hex
-    file = safe_session_path(client_id, session_id)
-
     payload = session.dict() if hasattr(session, "dict") else session.model_dump()
     payload["id"] = session_id
-    payload["client_id"] = client_id
 
-    # Serialize concurrent writes and write atomically (temp file + rename)
-    # so a concurrent GET never observes a half-written file, and two
-    # near-simultaneous saves for the same session never interleave.
-    with _session_write_lock:
-        tmp_file = file.with_suffix(".json.tmp")
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_file, file)
+    try:
+        await db.save_session(client_id, session_id, payload)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Not your session")
 
     return {"status": "ok", "id": session_id}
 
 @app.delete("/api/sessions/{session_id}")
-def delete_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
-    file = safe_session_path(client_id, session_id)
-    with _session_write_lock:
-        if file.exists():
-            file.unlink()
+async def delete_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+    if not SAFE_ID_RE.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session id")
+    try:
+        await db.delete_session(client_id, session_id)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Not your session")
     return {"status": "ok"}
 
 app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")

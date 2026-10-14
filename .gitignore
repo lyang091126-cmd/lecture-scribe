@@ -10,8 +10,8 @@ env/
 .env
 *.local.env
 
-# Local Session History (sessions are stored per-client in subdirectories:
-# data/sessions/<client_id>/<session_id>.json)
+# Local lecture data (local SQLite fallback + legacy per-client JSON files)
+data/*.db
 data/sessions/**/*.json
 data/sessions/*.json
 !data/sessions/.gitkeep
