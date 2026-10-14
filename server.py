@@ -1440,6 +1440,28 @@ async def export_srt(session: SessionData, _rl=Depends(check_rate_limit)):
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_fn}"}
     )
 
+@app.get("/api/health")
+async def health():
+    """Says which storage backend is actually in use. Without a database the
+    lecture history silently disappears on every restart, so this needs to be
+    checkable from outside rather than buried in startup logs."""
+    storage = "postgres" if db.using_postgres else "ephemeral-sqlite"
+    reachable = True
+    detail = ""
+    try:
+        await db.list_sessions("__healthcheck__")
+    except Exception as e:
+        reachable = False
+        detail = type(e).__name__
+    return {
+        "status": "ok" if reachable else "degraded",
+        "storage": storage,
+        "storage_reachable": reachable,
+        "storage_error": detail,
+        "durable": bool(db.using_postgres and reachable),
+        "retention_days": SESSION_RETENTION_SECONDS // 86400,
+    }
+
 @app.get("/api/sessions")
 async def list_sessions(client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
     await maybe_purge_expired_sessions()
