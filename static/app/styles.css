@@ -1491,7 +1491,7 @@ body.has-paid-plan .menu-pro-tag { display: none; }
 }
 .active-dock-inner {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
 }
 .dock-badge {
@@ -1499,6 +1499,7 @@ body.has-paid-plan .menu-pro-tag { display: none; }
   align-items: center;
   gap: 6px;
   padding: 3px 9px;
+  margin-top: 2px;
   border-radius: 99px;
   background: var(--bg-warm-tint);
   color: var(--ink-secondary);
@@ -1525,11 +1526,21 @@ body.has-paid-plan .menu-pro-tag { display: none; }
 .active-text-wrapper {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-height: 2.95em;
+  max-height: 4.5em;
+  line-height: 1.48;
+  white-space: normal;
+  word-break: break-word;
+  overflow-y: auto;
   font-size: 13px;
   color: var(--ink);
+  padding-right: 4px;
+}
+.active-text-wrapper::-webkit-scrollbar { width: 4px; }
+.active-text-wrapper::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+.dock-actions {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 .active-cursor {
   color: var(--cobalt);

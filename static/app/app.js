@@ -1447,6 +1447,9 @@ function setupSpeechRecognition() {
       const prevTrimmed = (state.activeInterimText || '').trim();
       state.activeInterimText = trimmed;
       el.activeSourceText.textContent = trimmed;
+      if (el.activeSourceText.parentElement) {
+        el.activeSourceText.parentElement.scrollTop = el.activeSourceText.parentElement.scrollHeight;
+      }
       setSubtitle(trimmed);
       queueLiveSubtitleTranslation();
 
@@ -1521,6 +1524,9 @@ function handleFinalSentence(sentence) {
   if (!sentence) return;
   state.thoughtBuffer.push(sentence);
   el.activeSourceText.textContent = state.thoughtBuffer.join(' ') + ' ...';
+  if (el.activeSourceText.parentElement) {
+    el.activeSourceText.parentElement.scrollTop = el.activeSourceText.parentElement.scrollHeight;
+  }
 
   const joinedText = state.thoughtBuffer.join(' ');
   // 积累 2 个短句或总长度达 55 字符时，立刻输出知识卡片
