@@ -18,6 +18,10 @@ import json
 import time
 import io
 import uuid
+import hmac
+import hashlib
+import base64
+import secrets
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,7 +31,7 @@ from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 import httpx
 from docx import Document
@@ -98,7 +102,7 @@ async def lifespan(app: FastAPI):
         print(f"[Storage] unavailable ({db.init_error}); lecture history is off, everything else still works")
     yield
 
-app = FastAPI(title="LectureScribe - 课堂智能双语速记与排版系统", lifespan=lifespan)
+app = FastAPI(title="Anti Lecture - 课堂智能双语速记与课件同步工作台", lifespan=lifespan)
 
 # --- Security: CORS. Wildcard origin + credentials is an invalid/unsafe
 # combination; we only ever read a custom header (no cookies), so
@@ -108,8 +112,179 @@ app.add_middleware(
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type", "X-Client-Id"],
+    allow_headers=["Content-Type", "X-Client-Id", "Authorization", "X-Admin-Secret"],
 )
+
+# --- Lightweight Username + Password Auth & 3-Tier Membership (Free / Pro / Ultra) ---
+AUTH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
+_AUTH_SECRET = (
+    os.environ.get("LECTURE_AUTH_SECRET")
+    or os.environ.get("DATABASE_URL")
+    or f"lecturescribe-local-secret-{BASE_DIR}"
+).encode("utf-8")
+
+USERNAME_RE = re.compile(r'^[\w\u4e00-\u9fa5\-]{2,24}$')
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000)
+    return f"pbkdf2_sha256${salt}${dk.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        scheme, salt, hex_dk = stored.split("$", 2)
+        if scheme != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000)
+        return hmac.compare_digest(dk.hex(), hex_dk)
+    except Exception:
+        return False
+
+
+def issue_auth_token(user_id: str) -> str:
+    exp = int(time.time()) + AUTH_TOKEN_TTL_SECONDS
+    payload = f"{user_id}.{exp}".encode("utf-8")
+    sig = hmac.new(_AUTH_SECRET, payload, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=") + "." + base64.urlsafe_b64encode(sig).decode("ascii").rstrip("=")
+
+
+def verify_auth_token(token: str) -> Optional[str]:
+    try:
+        p_b64, s_b64 = token.strip().split(".", 1)
+        p_pad = p_b64 + "=" * (-len(p_b64) % 4)
+        s_pad = s_b64 + "=" * (-len(s_b64) % 4)
+        payload = base64.urlsafe_b64decode(p_pad.encode("ascii"))
+        sig = base64.urlsafe_b64decode(s_pad.encode("ascii"))
+        expected = hmac.new(_AUTH_SECRET, payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        user_id, exp_str = payload.decode("utf-8").rsplit(".", 1)
+        if int(exp_str) < int(time.time()):
+            return None
+        return user_id
+    except Exception:
+        return None
+
+
+async def get_optional_user(request: Request) -> Optional[Dict[str, Any]]:
+    auth = request.headers.get("authorization", "").strip()
+    if not auth.lower().startswith("bearer "):
+        return None
+    token = auth[7:].strip()
+    user_id = verify_auth_token(token)
+    if not user_id:
+        return None
+    try:
+        row = await db.get_user_by_id(user_id)
+        if row is None:
+            return None
+        return db.user_to_dict(row)
+    except Exception:
+        return None
+
+
+async def get_owner_key(request: Request) -> str:
+    user = await get_optional_user(request)
+    if user:
+        return f"user:{user['id']}"
+    return get_client_id(request)
+
+
+def resolve_provider_and_model(
+    api_key: str,
+    provider: Optional[str],
+    model_name: Optional[str],
+    custom_endpoint: Optional[str],
+) -> tuple[str, str]:
+    """Allow blank model_name and auto-detect provider/default model cleanly."""
+    key = (api_key or "").strip()
+    prov = (provider or "").strip().lower()
+    ep = (custom_endpoint or "").strip().lower()
+    model = (model_name or "").strip()
+
+    if not prov or prov == "free_google":
+        prov = "gemini" if key.startswith("AIza") else "openai_compatible"
+    elif prov == "gemini" and key and not key.startswith("AIza") and ep:
+        prov = "openai_compatible"
+    elif prov in ("openai_compatible", "deepseek") and key.startswith("AIza") and not ep:
+        prov = "gemini"
+
+    if not model:
+        if prov == "gemini":
+            model = "gemini-2.5-flash"
+        elif "deepseek" in ep or prov == "deepseek":
+            model = "deepseek-chat"
+        elif "dashscope" in ep or "aliyuncs" in ep:
+            model = "qwen-plus"
+        elif "siliconflow" in ep:
+            model = "Qwen/Qwen2.5-72B-Instruct"
+        elif "moonshot" in ep:
+            model = "moonshot-v1-8k"
+        elif "openrouter" in ep:
+            model = "google/gemini-2.5-flash"
+        else:
+            model = "gpt-4o-mini"
+    return prov, model
+
+
+async def resolve_ai_credentials(
+    request: Request,
+    req_api_key: Optional[str],
+    req_provider: Optional[str],
+    req_model: Optional[str],
+    req_endpoint: Optional[str],
+    quota_bucket: str,
+) -> Dict[str, Any]:
+    """Resolve whether to use visitor's own key, Ultra built-in server quota,
+    or fall back cleanly. Never spends server keys on anonymous/Free/Pro users."""
+    user_key = (req_api_key or "").strip()
+    if user_key:
+        prov, model = resolve_provider_and_model(user_key, req_provider, req_model, req_endpoint)
+        return {
+            "api_key": user_key,
+            "provider": prov,
+            "model_name": model,
+            "custom_endpoint": (req_endpoint or "").strip(),
+            "via_ultra_quota": False,
+            "quota_notice": "",
+        }
+
+    # No custom key: ONLY active Ultra members with remaining monthly quota can use built-in model
+    user = await get_optional_user(request)
+    server_key = (os.environ.get("ULTRA_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
+    if user and user.get("plan") == "ultra" and server_key:
+        allowed, _ = await db.consume_ultra_quota(user["id"], quota_bucket)
+        if allowed:
+            ultra_provider = (os.environ.get("ULTRA_PROVIDER") or ("gemini" if server_key.startswith("AIza") else "openai_compatible")).strip()
+            ultra_model = (os.environ.get("ULTRA_MODEL") or ("gemini-2.5-flash-lite" if ultra_provider == "gemini" else "deepseek-chat")).strip()
+            ultra_ep = (os.environ.get("ULTRA_ENDPOINT") or "").strip()
+            return {
+                "api_key": server_key,
+                "provider": ultra_provider,
+                "model_name": ultra_model,
+                "custom_endpoint": ultra_ep,
+                "via_ultra_quota": True,
+                "quota_notice": "",
+            }
+        return {
+            "api_key": "",
+            "provider": "",
+            "model_name": "",
+            "custom_endpoint": "",
+            "via_ultra_quota": False,
+            "quota_notice": "本月 Ultra 内置额度已用完，可在设置中填入个人 API Key 继续使用。",
+        }
+
+    return {
+        "api_key": "",
+        "provider": "",
+        "model_name": "",
+        "custom_endpoint": "",
+        "via_ultra_quota": False,
+        "quota_notice": "",
+    }
 
 # --- Security: small in-memory rate limiter. Not distributed-safe (fine for
 # a single Render instance). The budget is per browser (X-Client-Id) because
@@ -254,6 +429,27 @@ class SummarizeRequest(BaseModel):
     custom_endpoint: Optional[str] = ""
     model_name: Optional[str] = "gemini-3.8-flash"
 
+class SlideOverviewRequest(BaseModel):
+    file_name: Optional[str] = ""
+    total_pages: int = 0
+    pages: List[Dict[str, Any]] = []
+    provider: Optional[str] = "gemini"
+    api_key: Optional[str] = ""
+    custom_endpoint: Optional[str] = ""
+    model_name: Optional[str] = "gemini-2.5-flash"
+
+class SlidePageSummaryRequest(BaseModel):
+    page: int
+    total_pages: int = 0
+    slide_title: Optional[str] = ""
+    slide_text: Optional[str] = ""
+    spoken_items: List[Dict[str, Any]] = []
+    course_title: Optional[str] = ""
+    provider: Optional[str] = "gemini"
+    api_key: Optional[str] = ""
+    custom_endpoint: Optional[str] = ""
+    model_name: Optional[str] = "gemini-2.5-flash"
+
 class SessionData(BaseModel):
     id: str
     title: str
@@ -264,6 +460,9 @@ class SessionData(BaseModel):
     duration_seconds: int = 0
     items: List[Dict[str, Any]] = []
     summary: Optional[Dict[str, Any]] = None
+    slide_meta: Optional[Dict[str, Any]] = None
+    slide_overview: Optional[Dict[str, Any]] = None
+    slide_summaries: Optional[Dict[str, Any]] = None
     client_id: Optional[str] = None
 
 # --- Security: SSRF guard. custom_endpoint is attacker-controlled input
@@ -732,15 +931,15 @@ async def translate_via_llm(text: str, source_lang: str, target_lang: str, req: 
   "section_heading": "新小标题（若无可留空字符串）"
 }}"""
 
-    if req.provider == "gemini":
+    prov, model = resolve_provider_and_model(req.api_key, req.provider, req.model_name, req.custom_endpoint)
+    if prov == "gemini":
         api_key = req.api_key.strip()
-        raw_json = await execute_gemini_call(api_key, req.model_name, prompt, is_json=True)
+        raw_json = await execute_gemini_call(api_key, model, prompt, is_json=True)
         return json.loads(raw_json)
     else:
         api_key = req.api_key.strip()
         endpoint = validate_custom_endpoint(req.custom_endpoint) + "/chat/completions"
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-        model = req.model_name.strip() or "gpt-4o-mini"
         payload = {
             "model": model,
             "messages": [
@@ -765,6 +964,7 @@ async def handle_translate(req: TranslateRequest, request: Request, _rl=Depends(
     raw_text = req.text.strip()
     if not raw_text:
         return {"cleaned_source": "", "translation": "", "keywords": [], "annotations": [], "section_heading": None}
+    log_event_bg("translate_use", request)
 
     cleaned = clean_filler_words(raw_text, req.source_lang)
     heading = extract_heading_signal(cleaned)
@@ -935,6 +1135,7 @@ def generate_dynamic_academic_answer(card_src: str, card_tr: str, user_q: str = 
 
 @app.post("/api/ask-card")
 async def handle_ask_card(req: AskCardRequest, request: Request, _rl=Depends(check_rate_limit)):
+    log_event_bg("ask_ta", request)
     card_src = (req.card_source or "").strip()
     card_tr = (req.card_translation or "").strip()
     user_inquiry = f"【学生具体疑问】: {req.question.strip()}" if req.question and req.question.strip() else "【任务】: 学生点击了一键答疑，请主动全方位深度精讲本段核心知识点。"
@@ -965,25 +1166,24 @@ async def handle_ask_card(req: AskCardRequest, request: Request, _rl=Depends(che
 
 字数控制在 160~320 字以内，层次分明，排版规范，让学生一眼看懂！"""
 
-    # Only ever spend the *visitor's own* API key here, never fall back to
-    # the server's own GEMINI_API_KEY/OPENAI_API_KEY env vars — otherwise
-    # every anonymous visitor who didn't paste a key would silently drain
-    # the site owner's quota/billing (this endpoint already has a solid
-    # non-LLM fallback below, same as /api/translate's design).
-    api_key = (req.api_key or "").strip()
-    provider = req.provider or ("gemini" if api_key.startswith("AIzaSy") else "openai_compatible")
+    creds = await resolve_ai_credentials(
+        request, req.api_key, req.provider, req.model_name, req.custom_endpoint, "qa"
+    )
+    api_key = creds["api_key"]
+    provider = creds["provider"]
+    model = creds["model_name"]
+    custom_ep = creds["custom_endpoint"]
 
     if api_key and provider in ["gemini", "openai_compatible", "deepseek"]:
         try:
-            print(f"[AskCard] Calling LLM via {provider}, key_len={len(api_key)}, model={req.model_name}...")
+            print(f"[AskCard] Calling LLM via {provider}, model={model}, ultra={creds['via_ultra_quota']}...")
             if provider == "gemini":
-                ans = await execute_gemini_call(api_key, req.model_name, prompt, is_json=False)
+                ans = await execute_gemini_call(api_key, model, prompt, is_json=False)
                 if ans and len(ans.strip()) > 20:
-                    return {"answer": ans.strip(), "source": "gemini_llm"}
+                    return {"answer": ans.strip(), "source": "ultra_llm" if creds["via_ultra_quota"] else "gemini_llm"}
             else:
-                endpoint = validate_custom_endpoint(req.custom_endpoint) + "/chat/completions"
+                endpoint = validate_custom_endpoint(custom_ep) + "/chat/completions"
                 headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-                model = req.model_name.strip() or "gpt-4o-mini"
                 payload = {
                     "model": model,
                     "messages": [
@@ -997,12 +1197,14 @@ async def handle_ask_card(req: AskCardRequest, request: Request, _rl=Depends(che
                         res_json = resp.json()
                         ans = res_json["choices"][0]["message"]["content"]
                         if ans and len(ans.strip()) > 20:
-                            return {"answer": ans.strip(), "source": "openai_llm"}
+                            return {"answer": ans.strip(), "source": "ultra_llm" if creds["via_ultra_quota"] else "openai_llm"}
         except Exception as e:
             print(f"[AskCard] LLM call failed, smoothly switching to dynamic academic fallback: {e}")
 
     # 动态上下文自适应语义答疑（绝非千篇一律的死板套话，彻底杜绝所有卡片相同内容）
     ans = generate_dynamic_academic_answer(card_src, card_tr, req.question)
+    if creds.get("quota_notice"):
+        ans = f"⚠️ {creds['quota_notice']}\n\n" + ans
     return {"answer": ans, "source": "adaptive_engine"}
 
 @app.post("/api/summarize")
@@ -1063,25 +1265,27 @@ async def handle_summarize(req: SummarizeRequest, request: Request, _rl=Depends(
                 cleaned_list.append({"term_en": t_en, "term_zh": t_zh, "desc": desc})
         return cleaned_list
 
-    # Same rule as /api/ask-card: never fall back to the server's own env
-    # API key for anonymous visitors — only spend a key the visitor supplied.
-    api_key = (req.api_key or "").strip()
-    provider = req.provider or ("gemini" if api_key.startswith("AIzaSy") else "openai_compatible")
+    creds = await resolve_ai_credentials(
+        request, req.api_key, req.provider, req.model_name, req.custom_endpoint, "qa"
+    )
+    api_key = creds["api_key"]
+    provider = creds["provider"]
+    model = creds["model_name"]
+    custom_ep = creds["custom_endpoint"]
 
     if api_key and provider in ["gemini", "openai_compatible", "deepseek"]:
         try:
-            print(f"[Summarize] Calling LLM via {provider}, key_len={len(api_key)}...")
+            print(f"[Summarize] Calling LLM via {provider}, model={model}, ultra={creds['via_ultra_quota']}...")
             if provider == "gemini":
-                raw_json = await execute_gemini_call(api_key, req.model_name, prompt, is_json=True)
+                raw_json = await execute_gemini_call(api_key, model, prompt, is_json=True)
                 data = json.loads(raw_json)
                 if "glossary" in data and isinstance(data["glossary"], list):
                     data["glossary"] = _sanitize_glossary_list(data["glossary"])
                 if data.get("overview") and "共记录" not in data.get("overview"):
                     return data
             else:
-                endpoint = validate_custom_endpoint(req.custom_endpoint) + "/chat/completions"
+                endpoint = validate_custom_endpoint(custom_ep) + "/chat/completions"
                 headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-                model = req.model_name.strip() or "gpt-4o-mini"
                 payload = {
                     "model": model,
                     "messages": [
@@ -1182,6 +1386,319 @@ async def handle_summarize(req: SummarizeRequest, request: Request, _rl=Depends(
         "glossary": all_glossary[:6]
     }
 
+
+def _heuristic_slide_overview(req: SlideOverviewRequest) -> Dict[str, Any]:
+    pages = (req.pages or [])[:150]
+    total = req.total_pages or len(pages)
+    clean_name = re.sub(r'\.pdf$', '', (req.file_name or '').strip(), flags=re.IGNORECASE)
+
+    titles = []
+    all_text_parts = []
+    objectives = []
+
+    for idx, p in enumerate(pages, start=1):
+        pg = int(p.get("page") or idx)
+        title = (p.get("title") or "").strip()
+        text = (p.get("text") or "").strip()
+        if not title and text:
+            first_line = next((ln.strip() for ln in re.split(r'[\n。\.!?]+', text) if len(ln.strip()) >= 3), "")
+            title = first_line[:60]
+        titles.append((pg, title or f"第 {pg} 页", text))
+        all_text_parts.append(text[:400])
+
+        if re.search(r'(objective|learning outcome|agenda|outline|goals?|教学目标|课程目标|大纲)', (title + " " + text[:200]), re.I):
+            for ln in text.splitlines():
+                s = re.sub(r'^[\s•\-–\d\.、]+', '', ln).strip()
+                if 8 <= len(s) <= 110 and not re.search(r'^(objective|agenda|outline|learning)', s, re.I):
+                    if s not in objectives:
+                        objectives.append(s)
+                if len(objectives) >= 3:
+                    break
+
+    course_topic = titles[0][1] if titles and len(titles[0][1]) >= 4 else (clean_name or "本节课程课件")
+    if not objectives:
+        non_trivial = [t[1] for t in titles[1:] if len(t[1]) >= 4][:3]
+        if non_trivial:
+            objectives = [f"掌握「{t}」的核心概念与基本思路" for t in non_trivial]
+        else:
+            objectives = [
+                f"理解《{course_topic}》的主线结构与核心概念",
+                "结合教授课堂口述补充，理清各页之间的推导与案例联系",
+            ]
+
+    # Group slides into 3–5 readable page-range outline blocks
+    outline = []
+    if titles:
+        chunk_count = min(5, max(1, (len(titles) + 4) // 5))
+        chunk_size = max(1, (len(titles) + chunk_count - 1) // chunk_count)
+        for start in range(0, len(titles), chunk_size):
+            grp = titles[start:start + chunk_size]
+            p_start, p_end = grp[0][0], grp[-1][0]
+            page_label = f"P{p_start}" if p_start == p_end else f"P{p_start}–P{p_end}"
+            lead_title = grp[0][1][:42]
+            sub_titles = [g[1][:26] for g in grp[1:3] if g[1] and g[1] != grp[0][1]]
+            brief = f"涵盖 {' / '.join(sub_titles)}" if sub_titles else (grp[0][2][:60].replace('\n', ' ') or "本段核心概念讲解")
+            outline.append({"pages": page_label, "topic": lead_title, "brief": brief})
+
+    # Extract key terms from builtin tech glossary + capitalized acronyms
+    combined_lower = "\n".join(all_text_parts).lower()
+    key_terms = []
+    seen_terms = set()
+    for k, entry in BUILTIN_TECH_GLOSSARY.items():
+        if re.search(r'\b' + re.escape(k) + r'\b', combined_lower):
+            if k not in seen_terms:
+                seen_terms.add(k)
+                key_terms.append({
+                    "term": entry["term_en"],
+                    "zh": entry["term_zh"],
+                    "note": entry["desc"][:55]
+                })
+        if len(key_terms) >= 6:
+            break
+
+    if len(key_terms) < 4:
+        acronyms = re.findall(r'\b[A-Z]{2,6}\b', "\n".join(all_text_parts))
+        freq: Dict[str, int] = {}
+        for ac in acronyms:
+            if ac.lower() not in ENGLISH_STOP_WORDS and ac not in {"PDF", "PPT", "THE", "AND", "FOR", "WITH", "FROM", "THIS", "THAT"}:
+                freq[ac] = freq.get(ac, 0) + 1
+        for ac, _ in sorted(freq.items(), key=lambda x: -x[1]):
+            if ac.lower() not in seen_terms:
+                seen_terms.add(ac.lower())
+                key_terms.append({"term": ac, "zh": "课件高频缩写", "note": "上课时可重点留意教授对该缩写的定义与场景说明"})
+            if len(key_terms) >= 5:
+                break
+
+    return {
+        "course_topic": course_topic,
+        "total_pages": total,
+        "objectives": objectives[:3],
+        "outline": outline[:5],
+        "key_terms": key_terms[:6],
+        "source": "heuristic",
+    }
+
+
+@app.post("/api/slide-overview")
+async def handle_slide_overview(req: SlideOverviewRequest, request: Request, _rl=Depends(check_rate_limit)):
+    log_event_bg("pdf_upload", request)
+    pages = (req.pages or [])[:150]
+    if not pages:
+        raise HTTPException(status_code=400, detail="未收到课件页面文本")
+
+    compact_lines = []
+    for idx, p in enumerate(pages, start=1):
+        pg = int(p.get("page") or idx)
+        title = (p.get("title") or "").strip()[:80]
+        text = re.sub(r'\s+', ' ', (p.get("text") or "").strip())[:260]
+        compact_lines.append(f"[P{pg}] {title} | {text}")
+    slides_digest = "\n".join(compact_lines)[:12000]
+
+    prompt = f"""你是高校课堂学习助教。学生刚上传了一份共 {req.total_pages or len(pages)} 页的课程 Slide（文件名：{req.file_name or '未命名'}）。
+请快速给出一份**简短、清晰、20 秒能扫完**的课前课件总览，严格返回如下 JSON（所有解释用简体中文，严禁冗长）：
+{{
+  "course_topic": "一句话点明本节课件主题（25字以内）",
+  "objectives": ["教学目标1（简短一句）", "教学目标2", "教学目标3"],
+  "outline": [
+    {{"pages": "P1-P4", "topic": "模块小标题", "brief": "一句话说清这几页讲什么（30字以内）"}}
+  ],
+  "key_terms": [
+    {{"term": "英文术语", "zh": "中文名", "note": "一句话大白话说明（30字以内）"}}
+  ]
+}}
+要求：
+1. objectives 严格 2-3 条；outline 严格 3-5 段覆盖全部页码；key_terms 严格 3-6 个本课件真正出现的核心专有名词。
+2. 直接说干货，不要写客套话或统计页数字数。
+
+课件各页摘录：
+{slides_digest}
+"""
+
+    creds = await resolve_ai_credentials(
+        request, req.api_key, req.provider, req.model_name, req.custom_endpoint, "overview"
+    )
+    api_key = creds["api_key"]
+    provider = creds["provider"]
+    model = creds["model_name"]
+    custom_ep = creds["custom_endpoint"]
+
+    if api_key and provider in ["gemini", "openai_compatible", "deepseek"]:
+        try:
+            if provider == "gemini":
+                raw_json = await execute_gemini_call(api_key, model, prompt, is_json=True)
+                data = json.loads(raw_json)
+            else:
+                endpoint = validate_custom_endpoint(custom_ep) + "/chat/completions"
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "You are a concise university lecture assistant. Return valid JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "response_format": {"type": "json_object"}
+                }
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(endpoint, headers=headers, json=payload)
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"HTTP {resp.status_code}")
+                    raw_text = resp.json()["choices"][0]["message"]["content"]
+                    raw_text = re.sub(r'^```json\s*', '', raw_text.strip())
+                    raw_text = re.sub(r'\s*```$', '', raw_text.strip())
+                    data = json.loads(raw_text)
+
+            if isinstance(data, dict) and data.get("objectives"):
+                data["total_pages"] = req.total_pages or len(pages)
+                data["source"] = "ultra_llm" if creds["via_ultra_quota"] else "llm"
+                return data
+        except Exception as e:
+            print(f"[SlideOverview] LLM error, falling back to heuristic: {e}")
+
+    out = _heuristic_slide_overview(req)
+    if creds.get("quota_notice"):
+        out["quota_notice"] = creds["quota_notice"]
+    return out
+
+
+def _heuristic_slide_page_summary(req: SlidePageSummaryRequest) -> Dict[str, Any]:
+    title = (req.slide_title or "").strip()
+    slide_clean = re.sub(r'\s+', ' ', (req.slide_text or "").strip())
+    spoken_zh = [
+        (it.get("translation") or "").strip()
+        for it in (req.spoken_items or [])
+        if (it.get("translation") or "").strip() and "翻译失败" not in (it.get("translation") or "")
+    ]
+    spoken_en = [
+        (it.get("source") or "").strip()
+        for it in (req.spoken_items or [])
+        if (it.get("source") or "").strip()
+    ]
+
+    if title:
+        headline = f"本页围绕「{title[:40]}」展开讲解。"
+    elif spoken_zh:
+        headline = spoken_zh[0][:56].rstrip("，, ") + "。"
+    elif slide_clean:
+        headline = f"本页核心内容：{slide_clean[:56]}"
+    else:
+        headline = f"第 {req.page} 页课堂内容已归档。"
+
+    additions = []
+    for zh in spoken_zh:
+        s = zh.strip()
+        if len(s) >= 12 and s not in additions:
+            additions.append(s[:85])
+        if len(additions) >= 3:
+            break
+    if not additions:
+        additions = ["本页暂无足够教授口述记录，可继续收音或点击「重新总结」补充。"]
+
+    combined = (slide_clean + " " + " ".join(spoken_en)).lower()
+    keywords = []
+    for k, entry in BUILTIN_TECH_GLOSSARY.items():
+        if re.search(r'\b' + re.escape(k) + r'\b', combined):
+            keywords.append(entry["term_en"])
+        if len(keywords) >= 4:
+            break
+    if not keywords:
+        for ac in re.findall(r'\b[A-Z]{2,6}\b', slide_clean + " " + " ".join(spoken_en)):
+            if ac not in keywords and ac.lower() not in ENGLISH_STOP_WORDS:
+                keywords.append(ac)
+            if len(keywords) >= 4:
+                break
+
+    return {
+        "page": req.page,
+        "headline": headline,
+        "professor_additions": additions,
+        "keywords": keywords[:4],
+        "spoken_count": len(req.spoken_items or []),
+        "source": "heuristic",
+    }
+
+
+@app.post("/api/slide-page-summary")
+async def handle_slide_page_summary(req: SlidePageSummaryRequest, request: Request, _rl=Depends(check_rate_limit)):
+    spoken = (req.spoken_items or [])[:25]
+    slide_text = (req.slide_text or "").strip()[:1400]
+    spoken_lines = []
+    for it in spoken:
+        t = it.get("time_str") or ""
+        src = (it.get("source") or "").strip()[:220]
+        zh = (it.get("translation") or "").strip()[:220]
+        if src or zh:
+            spoken_lines.append(f"[{t}] 原声: {src} | 译文: {zh}")
+    spoken_block = "\n".join(spoken_lines) or "（本页暂无口述转写，请仅依据 Slide 原文提炼）"
+
+    prompt = f"""你是高校课堂双语助教。教授刚刚讲完《{req.course_title or '当前课程'}》的第 {req.page} 页 Slide（共 {req.total_pages or '?'} 页）。
+请把「这一页 Slide 原文」和「教授讲这页时的口述内容」融合，输出一份**极简、抓重点**的单页综合总结，严格返回 JSON（简体中文）：
+{{
+  "headline": "一句话说清这一页的核心结论（45字以内）",
+  "professor_additions": [
+    "教授口述中额外强调的例子、推导、对比或考点提示1（45字以内）",
+    "教授口述补充2（如无额外补充，提炼本页最关键的1条理解要点）"
+  ],
+  "keywords": ["关键词1", "关键词2", "关键词3"]
+}}
+要求：不要复述整页原文，重点突出「教授嘴上补充了什么 / 这页考什么」。
+
+【第 {req.page} 页 Slide 原文】：
+{slide_text or '（无提取文本，可能是纯图表页）'}
+
+【教授讲这一页时的口述记录】：
+{spoken_block}
+"""
+
+    creds = await resolve_ai_credentials(
+        request, req.api_key, req.provider, req.model_name, req.custom_endpoint, "slide_summary"
+    )
+    api_key = creds["api_key"]
+    provider = creds["provider"]
+    model = creds["model_name"]
+    custom_ep = creds["custom_endpoint"]
+
+    if api_key and provider in ["gemini", "openai_compatible", "deepseek"]:
+        try:
+            if provider == "gemini":
+                raw_json = await execute_gemini_call(api_key, model, prompt, is_json=True)
+                data = json.loads(raw_json)
+            else:
+                endpoint = validate_custom_endpoint(custom_ep) + "/chat/completions"
+                headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "You are a concise university lecture assistant. Return valid JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "response_format": {"type": "json_object"}
+                }
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(endpoint, headers=headers, json=payload)
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"HTTP {resp.status_code}")
+                    raw_text = resp.json()["choices"][0]["message"]["content"]
+                    raw_text = re.sub(r'^```json\s*', '', raw_text.strip())
+                    raw_text = re.sub(r'\s*```$', '', raw_text.strip())
+                    data = json.loads(raw_text)
+
+            if isinstance(data, dict) and data.get("headline"):
+                return {
+                    "page": req.page,
+                    "headline": str(data.get("headline", "")).strip(),
+                    "professor_additions": [str(x).strip() for x in (data.get("professor_additions") or []) if str(x).strip()][:3],
+                    "keywords": [str(x).strip() for x in (data.get("keywords") or []) if str(x).strip()][:4],
+                    "spoken_count": len(spoken),
+                    "source": "ultra_llm" if creds["via_ultra_quota"] else "llm",
+                }
+        except Exception as e:
+            print(f"[SlidePageSummary] LLM error, falling back to heuristic: {e}")
+
+    out = _heuristic_slide_page_summary(req)
+    if creds.get("quota_notice"):
+        out["quota_notice"] = creds["quota_notice"]
+    return out
+
 @app.post("/api/export/docx")
 async def export_docx(session: SessionData, _rl=Depends(check_rate_limit)):
     if len(session.items) > MAX_SESSION_ITEMS:
@@ -1204,9 +1721,42 @@ async def export_docx(session: SessionData, _rl=Depends(check_rate_limit)):
     meta_run.font.color.rgb = RGBColor(100, 116, 139)
     meta_p.paragraph_format.space_after = Pt(18)
 
+    if session.slide_overview:
+        doc.add_heading("📑 课件总览（教学目标与内容脉络）", level=1)
+        ov = session.slide_overview
+        if ov.get("course_topic"):
+            tp = doc.add_paragraph()
+            tp.add_run("【本节主题】 ").bold = True
+            tp.add_run(str(ov.get("course_topic")))
+        if ov.get("objectives"):
+            doc.add_paragraph("【教学目标】:").bold = True
+            for obj in ov.get("objectives", []):
+                doc.add_paragraph(f"• {obj}")
+        if ov.get("outline"):
+            doc.add_paragraph("【主要内容脉络】:").bold = True
+            for sec in ov.get("outline", []):
+                doc.add_paragraph(f"• {sec.get('pages', '')} {sec.get('topic', '')}：{sec.get('brief', '')}")
+
+    if session.slide_summaries:
+        doc.add_heading("📌 逐页 Slide + 教授口述综合总结", level=1)
+        def _pg_sort_key(k):
+            try:
+                return int(k)
+            except Exception:
+                return 9999
+        for pg_key in sorted(session.slide_summaries.keys(), key=_pg_sort_key):
+            ps = session.slide_summaries[pg_key]
+            if not isinstance(ps, dict):
+                continue
+            p_h = doc.add_paragraph()
+            p_h.add_run(f"Slide P{pg_key}｜").bold = True
+            p_h.add_run(ps.get("headline", ""))
+            for add in ps.get("professor_additions", []):
+                doc.add_paragraph(f"   - {add}")
+
     if session.summary:
         sum_h = doc.add_heading("🎯 课堂重点精要与板书提炼", level=1)
-        sum_h.style.font.color.rgb = RGBColor(79, 70, 229)
+        sum_h.style.font.color.rgb = RGBColor(31, 45, 230)
         
         ov_p = doc.add_paragraph()
         ov_p.add_run("【核心概览】 ").bold = True
@@ -1257,7 +1807,7 @@ async def export_docx(session: SessionData, _rl=Depends(check_rate_limit)):
         shd = OxmlElement('w:shd')
         shd.set(qn('w:val'), 'clear')
         shd.set(qn('w:color'), 'auto')
-        shd.set(qn('w:fill'), '4F46E5')
+        shd.set(qn('w:fill'), '1F2DE6')
         tcPr.append(shd)
 
     sorted_items = sorted(session.items, key=lambda x: (x.get('time_sec', 0), x.get('seq', 0)))
@@ -1269,7 +1819,8 @@ async def export_docx(session: SessionData, _rl=Depends(check_rate_limit)):
         c2.width = Inches(3.0)
 
         star = " ⭐" if item.get("starred") else ""
-        c0.text = f"⏱ {item.get('time_str', '00:00')}{star}"
+        slide_tag = f"\n[P{item['slide_page']}]" if item.get("slide_page") else ""
+        c0.text = f"⏱ {item.get('time_str', '00:00')}{star}{slide_tag}"
         c0.paragraphs[0].runs[0].font.size = Pt(9.5)
         c0.paragraphs[0].runs[0].font.color.rgb = RGBColor(100, 116, 139)
 
@@ -1307,7 +1858,7 @@ async def export_docx(session: SessionData, _rl=Depends(check_rate_limit)):
     # Document Watermark & Anti-Plagiarism Notice
     footer_p = doc.add_paragraph()
     footer_p.paragraph_format.space_before = Pt(24)
-    footer_run = footer_p.add_run("──────────────────────────────────────────────────\n📝 本笔记由 LectureScribe 智能生成 | 开发者: Blueberry (@lyang091126-cmd) | 享有原创版权保护 • 未经许可禁止商业剽窃")
+    footer_run = footer_p.add_run("──────────────────────────────────────────────────\n📝 本笔记由 Anti Lecture 智能生成 | 开发者: Blueberry (@lyang091126-cmd) | 享有原创版权保护 • 未经许可禁止商业剽窃")
     footer_run.font.size = Pt(8.5)
     footer_run.font.italic = True
     footer_run.font.color.rgb = RGBColor(148, 163, 184)
@@ -1337,6 +1888,39 @@ async def export_markdown(session: SessionData, _rl=Depends(check_rate_limit)):
         f"> **记录时间**: {time_str} | **课程时长**: {duration_min}分{duration_sec}秒 | **语言**: {session.source_lang.upper()} ➔ {session.target_lang.upper()}\n",
         "---",
     ]
+
+    if session.slide_overview:
+        ov = session.slide_overview
+        md.append("## 📑 课件总览（教学目标与内容脉络）\n")
+        if ov.get("course_topic"):
+            md.append(f"**本节主题**：{ov.get('course_topic')}\n")
+        if ov.get("objectives"):
+            md.append("**教学目标**：")
+            for obj in ov.get("objectives", []):
+                md.append(f"- {obj}")
+            md.append("")
+        if ov.get("outline"):
+            md.append("**主要内容脉络**：")
+            for sec in ov.get("outline", []):
+                md.append(f"- **{sec.get('pages', '')} {sec.get('topic', '')}**：{sec.get('brief', '')}")
+            md.append("")
+
+    if session.slide_summaries:
+        md.append("## 📌 逐页 Slide + 教授口述综合总结\n")
+        def _pg_sort_md(k):
+            try:
+                return int(k)
+            except Exception:
+                return 9999
+        for pg_key in sorted(session.slide_summaries.keys(), key=_pg_sort_md):
+            ps = session.slide_summaries[pg_key]
+            if not isinstance(ps, dict):
+                continue
+            md.append(f"### Slide P{pg_key}")
+            md.append(f"- **核心结论**：{ps.get('headline', '')}")
+            for add in ps.get("professor_additions", []):
+                md.append(f"- **口述补充**：{add}")
+            md.append("")
 
     if session.summary:
         md.append("## 🎯 课堂精要提炼与板书\n")
@@ -1388,7 +1972,7 @@ async def export_markdown(session: SessionData, _rl=Depends(check_rate_limit)):
 
     # Markdown Watermark
     md.append("\n---\n")
-    md.append("> 🛡️ **版权与防伪水印**：本课堂双语实录由 [LectureScribe](https://github.com/lyang091126-cmd/lecture-scribe) 智能生成  \n> **原作者**: Blueberry ([@lyang091126-cmd](https://github.com/lyang091126-cmd)) | 版权所有 © 2026 | 受原创版权法保护，未经许可禁止二次打包转售或商业剽窃")
+    md.append("> 🛡️ **版权与防伪水印**：本课堂双语实录由 [Anti Lecture](https://github.com/lyang091126-cmd/lecture-scribe) 智能生成  \n> **原作者**: Blueberry ([@lyang091126-cmd](https://github.com/lyang091126-cmd)) | 版权所有 © 2026 | 受原创版权法保护，未经许可禁止二次打包转售或商业剽窃")
 
     content = "\n".join(md)
     safe_title = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '_', session.title)
@@ -1437,7 +2021,7 @@ async def export_srt(session: SessionData, _rl=Depends(check_rate_limit)):
         last_end = float(sorted_items[-1].get("time_sec", len(sorted_items) * 5.0)) + 5.0
         srt_lines.append(str(len(sorted_items) + 1))
         srt_lines.append(f"{format_srt_time(last_end)} --> {format_srt_time(last_end + 3.5)}")
-        srt_lines.append("【LectureScribe 智能双语笔记 • Author: Blueberry (@lyang091126-cmd)】")
+        srt_lines.append("【Anti Lecture 智能双语笔记 • Author: Blueberry (@lyang091126-cmd)】")
         srt_lines.append("")
 
     content = "\n".join(srt_lines)
@@ -1486,43 +2070,285 @@ async def health():
         "retention_days": SESSION_RETENTION_SECONDS // 86400,
     }
 
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RedeemRequest(BaseModel):
+    code: str
+
+
+class AdminCreateCodesRequest(BaseModel):
+    plan: str = "pro"  # pro | ultra
+    count: int = 5
+    duration_days: int = 30
+
+
+class PaymentClaimRequest(BaseModel):
+    plan: str = "pro"  # pro | ultra
+    pay_method: str = "wechat"  # wechat | alipay
+    receipt_note: str = ""
+
+
+class ClaimReviewRequest(BaseModel):
+    action: str  # approve | reject
+    duration_days: int = 30
+
+
+class AdminSetPlanRequest(BaseModel):
+    plan: str  # free | pro | ultra
+    duration_days: int = 30
+
+
+class TrackEventRequest(BaseModel):
+    event_type: str
+
+
+ALLOWED_CLIENT_TRACK_EVENTS = {"page_landing", "page_app", "pdf_upload", "export_use"}
+
+
+def log_event_bg(event_type: str, request: Request, user_id: Optional[str] = None) -> None:
+    try:
+        cid = request.headers.get("x-client-id", "").strip()[:64]
+        ip = get_client_ip(request)[:64]
+        asyncio.create_task(db.record_usage_event(event_type, cid, ip, user_id))
+    except Exception:
+        pass
+
+
+def require_admin(request: Request) -> None:
+    env_secret = os.environ.get("ADMIN_SECRET", "").strip()
+    is_render = bool(os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_URL"))
+    effective_secret = env_secret or ("" if is_render else "antilecture-admin")
+    provided = request.headers.get("x-admin-secret", "").strip()
+    if not effective_secret or not hmac.compare_digest(provided, effective_secret):
+        raise HTTPException(status_code=403, detail="管理密钥错误或未配置 ADMIN_SECRET")
+
+
+@app.post("/api/track")
+async def track_event(req: TrackEventRequest, request: Request, _rl=Depends(check_rate_limit)):
+    ev = (req.event_type or "").strip()
+    if ev not in ALLOWED_CLIENT_TRACK_EVENTS:
+        return {"status": "ignored"}
+    user = await get_optional_user(request)
+    log_event_bg(ev, request, user["id"] if user else None)
+    return {"status": "ok"}
+
+
+@app.post("/api/billing/claim")
+async def billing_claim(req: PaymentClaimRequest, request: Request, _rl=Depends(check_rate_limit)):
+    """Scan-to-pay instant access: user submits WeChat/Alipay receipt note, gets
+    immediate 48h Pro/Ultra access on clean accounts, and author confirms to 30 days."""
+    ensure_storage_ready()
+    user = await get_optional_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="请先注册或登录账号后再提交付款申请")
+    note = (req.receipt_note or "").strip()
+    if len(note) < 2:
+        raise HTTPException(status_code=400, detail="请填写微信/支付宝账单后 4 位或付款时间，方便核对")
+    try:
+        claim, updated_user, temp_granted = await db.submit_payment_claim(
+            user["id"], req.plan, req.pay_method, note
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise storage_unavailable(e)
+
+    plan_label = "Ultra" if claim["plan"] == "ultra" else "Pro"
+    msg = (
+        f"已为你立即先享 48 小时 {plan_label} 全部功能！作者核对到账后将自动转正为完整 30 天。"
+        if temp_granted
+        else f"已提交 {plan_label} 付款核对申请，作者确认到账后将为你开通 30 天。"
+    )
+    return {
+        "status": "ok",
+        "claim": claim,
+        "user": updated_user,
+        "temp_granted": temp_granted,
+        "message": msg,
+    }
+
+
+@app.get("/api/admin/overview")
+async def admin_overview(request: Request):
+    require_admin(request)
+    ensure_storage_ready()
+    try:
+        return await db.get_admin_overview()
+    except Exception as e:
+        raise storage_unavailable(e)
+
+
+@app.post("/api/admin/claims/{claim_id}/review")
+async def admin_review_claim(claim_id: str, req: ClaimReviewRequest, request: Request):
+    require_admin(request)
+    ensure_storage_ready()
+    try:
+        claim, updated_user = await db.review_payment_claim(claim_id, req.action, req.duration_days)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise storage_unavailable(e)
+    return {"status": "ok", "claim": claim, "user": updated_user}
+
+
+@app.post("/api/admin/users/{user_id}/plan")
+async def admin_set_user_plan(user_id: str, req: AdminSetPlanRequest, request: Request):
+    require_admin(request)
+    ensure_storage_ready()
+    try:
+        updated_user = await db.set_user_plan_manual(user_id, req.plan, req.duration_days)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise storage_unavailable(e)
+    return {"status": "ok", "user": updated_user}
+
+
+@app.post("/api/auth/register")
+async def auth_register(req: AuthRequest, request: Request, _rl=Depends(check_rate_limit)):
+    ensure_storage_ready()
+    username = (req.username or "").strip()
+    password = req.password or ""
+    if not USERNAME_RE.match(username):
+        raise HTTPException(status_code=400, detail="用户名需为 2~24 位中英文、数字或下划线")
+    if len(password) < 6 or len(password) > 128:
+        raise HTTPException(status_code=400, detail="密码长度需为 6~128 位")
+
+    # Tight per-IP registration throttle (max 10 accounts/min per IP)
+    ip = get_client_ip(request)
+    if not _take_rate_token(f"reg:{ip}", 10, time.time()):
+        raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
+
+    try:
+        user = await db.create_user(username, hash_password(password))
+    except ValueError as ve:
+        if str(ve) == "USERNAME_EXISTS":
+            raise HTTPException(status_code=409, detail="该用户名已被注册，请换一个或直接登录")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise storage_unavailable(e)
+
+    # Claim any guest sessions from this browser under the new account
+    cid = request.headers.get("x-client-id", "").strip()
+    if cid and SAFE_ID_RE.match(cid):
+        try:
+            await db.claim_browser_sessions(cid, f"user:{user['id']}")
+        except Exception:
+            pass
+
+    token = issue_auth_token(user["id"])
+    return {"token": token, "user": user}
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: AuthRequest, request: Request, _rl=Depends(check_rate_limit)):
+    ensure_storage_ready()
+    username = (req.username or "").strip()
+    password = req.password or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="请输入用户名和密码")
+
+    try:
+        row = await db.get_user_by_username(username)
+    except Exception as e:
+        raise storage_unavailable(e)
+
+    if row is None or not verify_password(password, row.password_hash):
+        raise HTTPException(status_code=401, detail="用户名或密码不正确")
+
+    user = db.user_to_dict(row)
+    cid = request.headers.get("x-client-id", "").strip()
+    if cid and SAFE_ID_RE.match(cid):
+        try:
+            await db.claim_browser_sessions(cid, f"user:{user['id']}")
+        except Exception:
+            pass
+
+    token = issue_auth_token(user["id"])
+    return {"token": token, "user": user}
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request, _rl=Depends(check_rate_limit)):
+    user = await get_optional_user(request)
+    return {"user": user}
+
+
+@app.post("/api/billing/redeem")
+async def billing_redeem(req: RedeemRequest, request: Request, _rl=Depends(check_rate_limit)):
+    ensure_storage_ready()
+    user = await get_optional_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="请先注册或登录账号后再激活会员")
+    code = (req.code or "").strip()
+    if not code or len(code) < 6:
+        raise HTTPException(status_code=400, detail="请输入有效的 Pro / Ultra 激活码")
+    try:
+        updated_user, target_plan, days = await db.redeem_code(user["id"], code)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        raise storage_unavailable(e)
+    return {
+        "status": "ok",
+        "plan": target_plan,
+        "duration_days": days,
+        "user": updated_user,
+    }
+
+
+@app.post("/api/admin/codes")
+async def admin_create_codes(req: AdminCreateCodesRequest, request: Request):
+    require_admin(request)
+    codes = await db.create_redemption_codes(req.plan, req.count, req.duration_days)
+    return {"plan": req.plan, "duration_days": req.duration_days, "codes": codes}
+
+
 @app.get("/api/sessions")
-async def list_sessions(client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+async def list_sessions(owner_key: str = Depends(get_owner_key), _rl=Depends(check_rate_limit)):
     ensure_storage_ready()
     await maybe_purge_expired_sessions()
     try:
-        return await db.list_sessions(client_id)
+        return await db.list_sessions(owner_key)
     except Exception as e:
         raise storage_unavailable(e)
 
 @app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+async def get_session(session_id: str, owner_key: str = Depends(get_owner_key), _rl=Depends(check_rate_limit)):
     ensure_storage_ready()
     if not SAFE_ID_RE.match(session_id):
         raise HTTPException(status_code=400, detail="Invalid session id")
     try:
-        data = await db.get_session(client_id, session_id)
+        data = await db.get_session(owner_key, session_id)
     except Exception as e:
         raise storage_unavailable(e)
     if data is None:
-        # Don't leak whether someone else's lecture has this id.
         raise HTTPException(status_code=404, detail="Session not found")
     return data
 
 @app.post("/api/sessions")
-async def save_session(session: SessionData, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+async def save_session(session: SessionData, owner_key: str = Depends(get_owner_key), _rl=Depends(check_rate_limit)):
     ensure_storage_ready()
     if len(session.items) > MAX_SESSION_ITEMS:
         raise HTTPException(status_code=413, detail=f"课堂记录条目过多（上限 {MAX_SESSION_ITEMS} 条）")
 
-    # Never trust a client-supplied id: re-issue one that doesn't match the
-    # strict allowlist.
     session_id = session.id if session.id and SAFE_ID_RE.match(session.id) else uuid.uuid4().hex
     payload = session.dict() if hasattr(session, "dict") else session.model_dump()
     payload["id"] = session_id
 
     try:
-        await db.save_session(client_id, session_id, payload)
+        await db.save_session(owner_key, session_id, payload)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Not your session")
     except Exception as e:
@@ -1531,19 +2357,30 @@ async def save_session(session: SessionData, client_id: str = Depends(get_client
     return {"status": "ok", "id": session_id}
 
 @app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str, client_id: str = Depends(get_client_id), _rl=Depends(check_rate_limit)):
+async def delete_session(session_id: str, owner_key: str = Depends(get_owner_key), _rl=Depends(check_rate_limit)):
     ensure_storage_ready()
     if not SAFE_ID_RE.match(session_id):
         raise HTTPException(status_code=400, detail="Invalid session id")
     try:
-        await db.delete_session(client_id, session_id)
+        await db.delete_session(owner_key, session_id)
     except PermissionError:
         raise HTTPException(status_code=403, detail="Not your session")
     except Exception as e:
         raise storage_unavailable(e)
     return {"status": "ok"}
 
-app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")
+@app.get("/admin")
+async def admin_redirect():
+    return RedirectResponse(url="/admin/", status_code=307)
+
+@app.get("/app")
+async def app_redirect():
+    return RedirectResponse(url="/app/", status_code=307)
+
+(BASE_DIR / "static" / "admin").mkdir(parents=True, exist_ok=True)
+app.mount("/admin", StaticFiles(directory=str(BASE_DIR / "static" / "admin"), html=True), name="admin")
+app.mount("/app", StaticFiles(directory=str(BASE_DIR / "static" / "app"), html=True), name="workbench")
+app.mount("/", StaticFiles(directory=str(BASE_DIR / "static" / "landing"), html=True), name="landing")
 
 if __name__ == "__main__":
     import asyncio
@@ -1552,7 +2389,7 @@ if __name__ == "__main__":
 
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")
-    print(f"Starting LectureScribe server on {host}:{port}")
+    print(f"Starting Anti Lecture server on {host}:{port}")
 
     if sys.platform == "win32":
         # psycopg's async mode refuses to run on Windows' default Proactor

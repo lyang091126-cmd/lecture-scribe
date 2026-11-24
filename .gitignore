@@ -16,8 +16,12 @@ data/sessions/**/*.json
 data/sessions/*.json
 !data/sessions/.gitkeep
 
-# Temporary tests
+# Temporary tests & taste-skill build artifacts
 test_*.py
+.taste-skill/
+static/landing/.taste-skill/
+static/landing/shots/
+static/landing/assets/
 
 # OS / IDE
 .DS_Store

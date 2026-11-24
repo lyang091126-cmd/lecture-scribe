@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anti Lecture · 作者数据与审核后台</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-paper: #F5F2EC;
+  --bg-surface: #FFFFFF;
+  --bg-warm-tint: #EDE8DF;
+  --bg-warm-soft: #FAF8F4;
+  --ink: #171717;
+  --ink-secondary: #4A4742;
+  --ink-muted: #767169;
+  --cobalt: #315BCE;
+  --cobalt-hover: #2448B0;
+  --cobalt-soft: #EBF0FB;
+  --amber: #E8C97A;
+  --amber-soft: #FAF2DA;
+  --amber-ink: #6B5314;
+  --green: #1B7A43;
+  --green-soft: #E7F5EC;
+  --red: #C8372D;
+  --red-soft: #FCECEB;
+  --border: #E2DCD2;
+  --border-strong: #CEC7BB;
+  --font-serif: "Noto Serif SC", Georgia, serif;
+  --font-sans: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.t-num { font-variant-numeric: tabular-nums; }
+
+/* Login Gate */
+.gate-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.gate-card {
+  width: min(420px, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 26px;
+  box-shadow: 0 18px 44px -22px rgba(23, 23, 23, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 700;
+}
+.brand i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--cobalt); }
+.gate-card p { font-size: 13px; color: var(--ink-secondary); }
+.gate-card input {
+  width: 100%; height: 40px; padding: 0 12px;
+  border-radius: 9px; border: 1px solid var(--border-strong);
+  background: var(--bg-warm-soft); outline: none;
+}
+.gate-card input:focus { border-color: var(--cobalt); background: var(--bg-surface); }
+.gate-err {
+  font-size: 12.5px; color: var(--red); background: var(--red-soft);
+  padding: 8px 10px; border-radius: 7px; display: none;
+}
+.gate-hint { font-size: 11.5px; color: var(--ink-muted); line-height: 1.5; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; padding: 0 14px; border-radius: 9px;
+  font-size: 13px; font-weight: 500; border: 1px solid transparent;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn-primary { background: var(--cobalt); color: #FFFFFF; }
+.btn-primary:hover { background: var(--cobalt-hover); }
+.btn-secondary { background: var(--bg-surface); color: var(--ink); border-color: var(--border-strong); }
+.btn-secondary:hover { background: var(--bg-warm-soft); }
+.btn-green { background: var(--green); color: #FFFFFF; height: 30px; padding: 0 11px; font-size: 12px; }
+.btn-green:hover { background: #146336; }
+.btn-danger { background: var(--red-soft); color: var(--red); border-color: rgba(200, 55, 45, 0.25); height: 30px; padding: 0 10px; font-size: 12px; }
+.btn-danger:hover { background: var(--red); color: #FFFFFF; }
+.btn-xs { height: 26px; padding: 0 9px; font-size: 11.5px; border-radius: 6px; }
+
+/* Dashboard Shell */
+.dash { display: none; min-height: 100vh; padding-bottom: 48px; }
+.dash.open { display: block; }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: rgba(245, 242, 236, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-inner {
+  width: min(1200px, calc(100vw - 36px));
+  margin-inline: auto;
+  height: 60px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-tag {
+  font-size: 12px; font-weight: 600; color: var(--amber-ink);
+  background: var(--amber-soft); padding: 2px 9px; border-radius: 99px;
+}
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+
+.container {
+  width: min(1200px, calc(100vw - 36px));
+  margin: 24px auto 0;
+  display: flex; flex-direction: column; gap: 22px;
+}
+
+/* KPI Grid */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+.kpi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 15px 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.kpi-card--accent { border-color: var(--cobalt); background: var(--cobalt-soft); }
+.kpi-card--amber { border-color: #D7C38E; background: var(--bg-warm-soft); }
+.kpi-label { font-size: 12px; color: var(--ink-muted); font-weight: 500; }
+.kpi-value { font-size: 26px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; line-height: 1.2; }
+.kpi-sub { font-size: 11.5px; color: var(--ink-secondary); }
+
+/* Section Panels */
+.two-col { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 18px; }
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.panel-head h2 {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 600; color: var(--ink);
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.count-pill {
+  font-family: var(--font-sans); font-size: 11.5px; font-weight: 600;
+  padding: 1px 8px; border-radius: 99px;
+  background: var(--bg-warm-tint); color: var(--ink-secondary);
+}
+.count-pill--alert { background: var(--red-soft); color: var(--red); }
+
+/* 7-Day Trend Bars */
+.trend-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  min-height: 164px;
+  padding-top: 12px;
+}
+.trend-col {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.trend-bars {
+  height: 108px; width: 100%;
+  display: flex; align-items: flex-end; justify-content: center; gap: 4px;
+}
+.tbar {
+  width: 12px; border-radius: 4px 4px 2px 2px; min-height: 4px;
+  transition: height 0.25s ease;
+}
+.tbar--ip { background: var(--cobalt); }
+.tbar--active { background: var(--amber); }
+.tbar--reg { background: var(--green); }
+.trend-day { font-size: 11.5px; color: var(--ink-muted); }
+.trend-nums { font-size: 11px; color: var(--ink-secondary); text-align: center; }
+.trend-legend {
+  display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-muted);
+}
+.trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.trend-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* Tables & Claims */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td {
+  padding: 9px 10px; text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+th { font-size: 11.5px; font-weight: 600; color: var(--ink-muted); background: var(--bg-warm-soft); }
+.badge {
+  display: inline-flex; align-items: center; padding: 2px 8px;
+  border-radius: 99px; font-size: 11px; font-weight: 600;
+}
+.badge--free { background: var(--bg-warm-tint); color: var(--ink-secondary); }
+.badge--pro { background: var(--cobalt-soft); color: var(--cobalt); }
+.badge--ultra { background: var(--amber-soft); color: var(--amber-ink); }
+.badge--pending { background: var(--amber-soft); color: var(--amber-ink); }
+.badge--approved { background: var(--green-soft); color: var(--green); }
+.badge--rejected { background: var(--red-soft); color: var(--red); }
+.actions-cell { display: inline-flex; gap: 6px; }
+.empty-msg { font-size: 13px; color: var(--ink-muted); padding: 14px 4px; }
+
+/* Code Minting Tool */
+.mint-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mint-row select, .mint-row input {
+  height: 36px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--bg-warm-soft);
+}
+.codes-out {
+  background: var(--bg-warm-soft);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12.5px;
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 168px; overflow-y: auto;
+}
+.toast {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--bg-paper);
+  padding: 8px 16px; border-radius: 99px; font-size: 12.5px;
+  opacity: 0; pointer-events: none; transition: opacity 0.18s; z-index: 100;
+}
+.toast.show { opacity: 1; }
+
+@media (max-width: 1060px) {
+  .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .two-col { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- Admin Login Gate -->
+<div class="gate-wrap" id="gateWrap">
+  <form class="gate-card" id="gateForm">
+    <div class="brand">Anti Lecture<i></i></div>
+    <p>输入作者管理密钥（<code>ADMIN_SECRET</code>），进入实时访问统计、扫码付款审核与激活码管理后台。</p>
+    <input type="password" id="secretInput" placeholder="输入管理密钥..." required autocomplete="current-password">
+    <button type="submit" class="btn btn-primary">进入作者后台</button>
+    <div class="gate-err" id="gateErr"></div>
+    <div class="gate-hint">提示：管理密钥读取自本地 <code>.env</code> 或 Render 环境变量中的 <code>ADMIN_SECRET</code>。</div>
+  </form>
+</div>
+
+<!-- Author Dashboard -->
+<div class="dash" id="dash">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-left">
+        <a href="/" class="brand" style="text-decoration:none;color:inherit;">Anti Lecture<i></i></a>
+        <span class="topbar-tag">作者轻量后台</span>
+      </div>
+      <div class="topbar-right">
+        <a href="/app/" class="btn btn-secondary btn-xs">打开工作台</a>
+        <button type="button" class="btn btn-secondary btn-xs" id="btnRefresh">刷新数据</button>
+        <button type="button" class="btn btn-secondary btn-xs" id="btnLock">退出锁定</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- 6 Core KPI Cards -->
+    <section class="kpi-grid t-num" id="kpiGrid">
+      <div class="kpi-card kpi-card--accent">
+        <span class="kpi-label">独立 IP 访问（今日 / 累计）</span>
+        <strong class="kpi-value" id="kIpMain">0 / 0</strong>
+        <span class="kpi-sub" id="kIpSub">近 7 天：0 个独立 IP</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">实际听课使用人数</span>
+        <strong class="kpi-value" id="kActiveMain">0 / 0</strong>
+        <span class="kpi-sub" id="kActiveSub">PDF 上传 0 次 · 翻译 0 段</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">总页面浏览量 (PV)</span>
+        <strong class="kpi-value" id="kPvMain">0</strong>
+        <span class="kpi-sub" id="kPvSub">官网 0 · 工作台 0 · 今日 0</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">注册用户总数</span>
+        <strong class="kpi-value" id="kRegMain">0</strong>
+        <span class="kpi-sub" id="kRegSub">今日新增：0 人</span>
+      </div>
+      <div class="kpi-card kpi-card--amber">
+        <span class="kpi-label">有效付费会员</span>
+        <strong class="kpi-value" id="kPaidMain">0</strong>
+        <span class="kpi-sub" id="kPaidSub">Pro 0 人 · Ultra 0 人</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">已确认收款总额</span>
+        <strong class="kpi-value" id="kRevMain">¥0</strong>
+        <span class="kpi-sub" id="kRevSub">待核对付款：0 笔</span>
+      </div>
+    </section>
+
+    <!-- Pending Payment Claims (Scan-to-Pay Author Review) -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>扫码付款待核对 <span class="count-pill" id="pendingBadge">0 笔</span></h2>
+        <span style="font-size:12px;color:var(--ink-muted);">核对手机微信/支付宝到账后点「确认转正 30 天」；未到账点「驳回」立即收回临时权限</span>
+      </div>
+      <div class="table-wrap" id="pendingClaimsWrap">
+        <div class="empty-msg">暂无待审核的扫码付款申请。</div>
+      </div>
+    </section>
+
+    <!-- 7-Day Trend + Quick Code Generator -->
+    <section class="two-col">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>近 7 天每日访问与活跃趋势</h2>
+          <div class="trend-legend">
+            <span><i style="background:var(--cobalt);"></i>独立 IP</span>
+            <span><i style="background:var(--amber);"></i>实际使用</span>
+            <span><i style="background:var(--green);"></i>新注册</span>
+          </div>
+        </div>
+        <div class="trend-grid t-num" id="trendGrid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>批量生成 Pro / Ultra 激活码</h2>
+          <button type="button" class="btn btn-secondary btn-xs" id="btnCopyCodes">复制全部未用码</button>
+        </div>
+        <div class="mint-row">
+          <select id="mintPlan">
+            <option value="pro">Pro 月卡（¥4.9）</option>
+            <option value="ultra">Ultra 月卡（¥8.9）</option>
+          </select>
+          <select id="mintCount">
+            <option value="1">1 个</option>
+            <option value="5" selected>5 个</option>
+            <option value="10">10 个</option>
+            <option value="20">20 个</option>
+          </select>
+          <input type="number" id="mintDays" value="30" min="1" max="365" style="width:76px;" title="有效天数">
+          <button type="button" class="btn btn-primary" id="btnMintCodes">立即生成</button>
+        </div>
+        <div class="codes-out" id="codesOut">暂无未使用激活码。</div>
+      </div>
+    </section>
+
+    <!-- Recent Users & Manual Plan Control -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>最近注册用户 <span class="count-pill" id="usersCountBadge">0</span></h2>
+        <span style="font-size:12px;color:var(--ink-muted);">支持手动一键赠送/调整任意用户的会员档位</span>
+      </div>
+      <div class="table-wrap" id="usersTableWrap">
+        <div class="empty-msg">暂无注册用户。</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  const SECRET_KEY = 'anti_lecture_admin_secret';
+  let adminSecret = sessionStorage.getItem(SECRET_KEY) || '';
+  let latestCodes = [];
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const fmtTime = ts => {
+    if (!ts) return '—';
+    const d = new Date(ts * 1000);
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const showToast = msg => {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2600);
+  };
+
+  async function adminFetch(url, opts = {}) {
+    const res = await fetch(url, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Secret': adminSecret,
+        ...(opts.headers || {})
+      }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    return data;
+  }
+
+  function renderOverview(data) {
+    const k = data.kpis || {};
+    $('kIpMain').textContent = `${k.unique_ips_today || 0} / ${k.unique_ips_total || 0}`;
+    $('kIpSub').textContent = `近 7 天：${k.unique_ips_7d || 0} 个独立 IP`;
+
+    $('kActiveMain').textContent = `${k.active_users_today || 0} / ${k.active_users_total || 0}`;
+    $('kActiveSub').textContent = `PDF 上传 ${k.pdf_uploads_total || 0} 次 · 翻译 ${k.translates_total || 0} 段`;
+
+    $('kPvMain').textContent = String((k.page_views_landing || 0) + (k.page_views_app || 0));
+    $('kPvSub').textContent = `官网 ${k.page_views_landing || 0} · 工作台 ${k.page_views_app || 0} · 今日 ${k.page_views_today || 0}`;
+
+    $('kRegMain').textContent = String(k.registered_total || 0);
+    $('kRegSub').textContent = `今日新增：${k.registered_today || 0} 人`;
+
+    $('kPaidMain').textContent = String((k.pro_active || 0) + (k.ultra_active || 0));
+    $('kPaidSub').textContent = `Pro ${k.pro_active || 0} 人 · Ultra ${k.ultra_active || 0} 人`;
+
+    $('kRevMain').textContent = `¥${k.confirmed_revenue_rmb || 0}`;
+    $('kRevSub').textContent = `待核对付款：${k.pending_claims_count || 0} 笔`;
+
+    // Pending Claims Table
+    const claims = data.pending_claims || [];
+    const pb = $('pendingBadge');
+    pb.textContent = `${claims.length} 笔`;
+    pb.className = 'count-pill' + (claims.length > 0 ? ' count-pill--alert' : '');
+
+    if (claims.length === 0) {
+      $('pendingClaimsWrap').innerHTML = `<div class="empty-msg">当前没有待核对的付款申请。</div>`;
+    } else {
+      $('pendingClaimsWrap').innerHTML = `
+        <table class="t-num">
+          <thead>
+            <tr>
+              <th>用户名</th><th>申请套餐</th><th>金额</th><th>渠道</th><th>单号后4位 / 备注</th><th>临时权限</th><th>提交时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${claims.map(c => `
+              <tr>
+                <td><strong>${esc(c.username)}</strong></td>
+                <td><span class="badge badge--${esc(c.plan)}">${c.plan === 'ultra' ? 'Ultra' : 'Pro'}</span></td>
+                <td><strong>¥${c.amount_rmb}</strong></td>
+                <td>${c.pay_method === 'alipay' ? '支付宝' : '微信支付'}</td>
+                <td>${esc(c.receipt_note)}</td>
+                <td>${c.temp_granted ? '已先享 48h' : '等待审核'}</td>
+                <td>${fmtTime(c.created_at)}</td>
+                <td>
+                  <div class="actions-cell">
+                    <button type="button" class="btn btn-green" data-review="approve" data-id="${esc(c.id)}">确认转正 30 天</button>
+                    <button type="button" class="btn btn-danger" data-review="reject" data-id="${esc(c.id)}">驳回收回</button>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    // 7-Day Trend Chart
+    const trend = data.daily_trend || [];
+    const maxVal = Math.max(1, ...trend.flatMap(d => [d.unique_ips, d.active_users, d.registrations]));
+    $('trendGrid').innerHTML = trend.map(d => {
+      const hIp = Math.max(4, Math.round((d.unique_ips / maxVal) * 100));
+      const hAct = Math.max(4, Math.round((d.active_users / maxVal) * 100));
+      const hReg = Math.max(4, Math.round((d.registrations / maxVal) * 100));
+      return `
+        <div class="trend-col">
+          <div class="trend-bars" title="${d.day}: IP ${d.unique_ips} / 活跃 ${d.active_users} / 注册 ${d.registrations}">
+            <div class="tbar tbar--ip" style="height:${hIp}%"></div>
+            <div class="tbar tbar--active" style="height:${hAct}%"></div>
+            <div class="tbar tbar--reg" style="height:${hReg}%"></div>
+          </div>
+          <div class="trend-nums">${d.unique_ips}/${d.active_users}/${d.registrations}</div>
+          <div class="trend-day">${esc(d.label)}</div>
+        </div>
+      `;
+    }).join('');
+
+    // Unused Codes
+    const codes = data.unused_codes || [];
+    latestCodes = codes.map(c => c.code);
+    $('codesOut').innerHTML = codes.length
+      ? codes.map(c => `<div><strong>${esc(c.code)}</strong> · ${c.plan.toUpperCase()} (${c.duration_days}天)</div>`).join('')
+      : '<span style="color:var(--ink-muted)">暂无未使用激活码，点上方「立即生成」。</span>';
+
+    // Recent Users Table
+    const users = data.recent_users || [];
+    $('usersCountBadge').textContent = String(k.registered_total || users.length);
+    if (users.length === 0) {
+      $('usersTableWrap').innerHTML = `<div class="empty-msg">暂无注册用户。</div>`;
+    } else {
+      $('usersTableWrap').innerHTML = `
+        <table class="t-num">
+          <thead>
+            <tr>
+              <th>用户名</th><th>当前档位</th><th>到期时间</th><th>Ultra 月额度 (总览/页/助教)</th><th>注册时间</th><th>快捷调整</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${users.map(u => {
+              const q = u.quotas || {};
+              const exp = u.plan === 'free' ? '—' : fmtTime(u.plan_expires_at);
+              return `
+                <tr>
+                  <td><strong>${esc(u.username)}</strong></td>
+                  <td><span class="badge badge--${esc(u.plan)}">${u.plan === 'ultra' ? 'Ultra' : (u.plan === 'pro' ? 'Pro' : 'Free')}</span></td>
+                  <td>${exp}</td>
+                  <td>${q.overview_used || 0}/${q.overview_limit || 40} · ${q.slide_used || 0}/${q.slide_limit || 1200} · ${q.qa_used || 0}/${q.qa_limit || 300}</td>
+                  <td>${fmtTime(u.created_at)}</td>
+                  <td>
+                    <div class="actions-cell">
+                      <button type="button" class="btn btn-secondary btn-xs" data-set-plan="pro" data-uid="${esc(u.id)}">Pro 30天</button>
+                      <button type="button" class="btn btn-secondary btn-xs" data-set-plan="ultra" data-uid="${esc(u.id)}">Ultra 30天</button>
+                      <button type="button" class="btn btn-secondary btn-xs" data-set-plan="free" data-uid="${esc(u.id)}">降为 Free</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+  }
+
+  async function loadDashboard() {
+    const data = await adminFetch('/api/admin/overview');
+    $('gateWrap').style.display = 'none';
+    $('dash').classList.add('open');
+    renderOverview(data);
+  }
+
+  $('gateForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    adminSecret = $('secretInput').value.trim();
+    $('gateErr').style.display = 'none';
+    try {
+      await loadDashboard();
+      sessionStorage.setItem(SECRET_KEY, adminSecret);
+    } catch (err) {
+      $('gateErr').textContent = err.message || '密钥错误';
+      $('gateErr').style.display = 'block';
+    }
+  });
+
+  $('btnRefresh').addEventListener('click', async () => {
+    try {
+      await loadDashboard();
+      showToast('数据已刷新');
+    } catch (err) { showToast(err.message); }
+  });
+
+  $('btnLock').addEventListener('click', () => {
+    sessionStorage.removeItem(SECRET_KEY);
+    adminSecret = '';
+    $('dash').classList.remove('open');
+    $('gateWrap').style.display = 'flex';
+    $('secretInput').value = '';
+  });
+
+  $('pendingClaimsWrap').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-review]');
+    if (!btn) return;
+    const action = btn.dataset.review;
+    const id = btn.dataset.id;
+    if (action === 'reject' && !confirm('确定驳回该笔申请并收回对方的临时会员权限吗？')) return;
+    btn.disabled = true;
+    try {
+      await adminFetch(`/api/admin/claims/${encodeURIComponent(id)}/review`, {
+        method: 'POST',
+        body: JSON.stringify({ action, duration_days: 30 })
+      });
+      showToast(action === 'approve' ? '已确认到账，为用户转正 30 天！' : '已驳回并收回临时权限');
+      await loadDashboard();
+    } catch (err) {
+      showToast(err.message);
+      btn.disabled = false;
+    }
+  });
+
+  $('btnMintCodes').addEventListener('click', async () => {
+    const plan = $('mintPlan').value;
+    const count = parseInt($('mintCount').value, 10) || 5;
+    const duration_days = parseInt($('mintDays').value, 10) || 30;
+    try {
+      const res = await adminFetch('/api/admin/codes', {
+        method: 'POST',
+        body: JSON.stringify({ plan, count, duration_days })
+      });
+      showToast(`已生成 ${res.codes.length} 个 ${plan.toUpperCase()} 激活码`);
+      await loadDashboard();
+    } catch (err) { showToast(err.message); }
+  });
+
+  $('btnCopyCodes').addEventListener('click', async () => {
+    if (!latestCodes.length) { showToast('暂无可复制的激活码'); return; }
+    try {
+      await navigator.clipboard.writeText(latestCodes.join('\n'));
+      showToast(`已复制 ${latestCodes.length} 个激活码`);
+    } catch (e) { showToast('请手动框选复制'); }
+  });
+
+  $('usersTableWrap').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-set-plan]');
+    if (!btn) return;
+    const plan = btn.dataset.setPlan;
+    const uid = btn.dataset.uid;
+    try {
+      await adminFetch(`/api/admin/users/${encodeURIComponent(uid)}/plan`, {
+        method: 'POST',
+        body: JSON.stringify({ plan, duration_days: 30 })
+      });
+      showToast(`已更新用户档位为 ${plan.toUpperCase()}`);
+      await loadDashboard();
+    } catch (err) { showToast(err.message); }
+  });
+
+  if (adminSecret) {
+    loadDashboard().catch(() => {
+      sessionStorage.removeItem(SECRET_KEY);
+      adminSecret = '';
+    });
+  }
+})();
+</script>
+</body>
+</html>

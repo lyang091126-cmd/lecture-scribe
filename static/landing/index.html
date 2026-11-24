@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anti Lecture — 听懂每一页，留下整堂课</title>
+<meta name="description" content="Anti Lecture：上传教授的 PDF 课件，开课前看清教学目标与脉络；上课时按教授口述自动匹配 Slide 页码，实时双语翻译并逐页生成综合总结。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Anti Lecture — 听懂每一页，留下整堂课">
+<meta property="og:description" content="Free 免费实时双语翻译与 PDF 浏览；Pro（¥4.9/月）与 Ultra（¥8.9/月）解锁课前总览、自动跟页与逐页综合总结。">
+<meta property="og:image" content="share.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#F5F2EC">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   Anti Lecture — Editorial Cover (P4) + Cinema Rhythm (P5) + Scroll Theater
+   Warm Archival Paper (#F5F2EC) · Editorial Ink (#171717)
+   Restrained Cobalt (#315BCE) · Sparing Champagne Amber (#E8C97A)
+   Single Espresso-Ink Cinema Band (#141210)
+   Two Font Systems Only: Noto Serif SC + Inter / Noto Sans SC
+   ========================================================================== */
+:root {
+  --bg-paper: #F5F2EC;
+  --bg-surface: #FFFFFF;
+  --bg-warm-tint: #ECE6DC;
+  --bg-warm-soft: #FAF8F4;
+
+  --dark-band: #141210;
+  --dark-surface: #1D1A17;
+  --dark-border: rgba(232, 201, 122, 0.2);
+  --dark-border-soft: rgba(245, 242, 236, 0.11);
+  --dark-ink: #F5F2EC;
+  --dark-muted: #A9A195;
+
+  --ink: #171717;
+  --ink-secondary: #4A4742;
+  --ink-muted: #767169;
+  --cobalt: #315BCE;
+  --cobalt-hover: #2448B0;
+  --cobalt-soft: #EBF0FB;
+  --amber: #E8C97A;
+  --amber-soft: #FAF2DA;
+  --amber-ink: #6B5314;
+
+  --border: #E2DCD2;
+  --border-strong: #CEC7BB;
+
+  --font-serif: "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;
+  --font-sans: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --shadow-card: 0 1px 2px rgba(23, 23, 23, 0.04), 0 14px 34px -20px rgba(23, 23, 23, 0.16);
+  --shadow-polaroid: 0 4px 12px rgba(23, 23, 23, 0.06), 0 24px 48px -20px rgba(23, 23, 23, 0.22);
+  --wrap: min(1240px, calc(100vw - 56px));
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg-paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+img, svg { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.wrap { width: var(--wrap); margin-inline: auto; }
+.t-num { font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   Top Editorial Index Bar (P5-inspired) + Main Navigation
+   ========================================================================== */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+  background: rgba(245, 242, 236, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(226, 220, 210, 0.72);
+  transition: background-color 0.28s ease, box-shadow 0.28s ease;
+}
+.nav__index {
+  border-bottom: 1px solid rgba(226, 220, 210, 0.55);
+  height: 28px;
+  overflow: hidden;
+  transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
+}
+.nav__index-inner {
+  height: 28px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.nav.is-compact .nav__index,
+.nav.is-scrolled .nav__index {
+  height: 0; opacity: 0; border-bottom-color: transparent;
+}
+.nav__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; height: 64px;
+  transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav.is-compact .nav__bar { height: 52px; }
+.nav.is-compact .nav__links { opacity: 0.56; }
+.nav.is-scrolled {
+  background: rgba(245, 242, 236, 0.95);
+  box-shadow: 0 6px 24px -18px rgba(23, 23, 23, 0.24);
+}
+.nav.is-scrolled .nav__links { opacity: 1; }
+
+.brand {
+  display: inline-flex; align-items: baseline; gap: 3px;
+  font-family: var(--font-serif); font-size: 20px; font-weight: 700;
+  letter-spacing: -0.02em; color: var(--ink);
+  transition: opacity 0.18s ease;
+}
+.brand:hover { opacity: 0.82; }
+.brand__dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--cobalt); transform: translateY(-1px);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.brand:hover .brand__dot { transform: translateY(-1px) scale(1.3); }
+
+.nav__right { display: flex; align-items: center; gap: 30px; }
+.nav__links { display: flex; align-items: center; gap: 26px; transition: opacity 0.24s ease; }
+.nav__link {
+  position: relative; font-size: 14px; font-weight: 500; color: var(--ink-secondary);
+  padding: 4px 0; transition: color 0.18s ease;
+}
+.nav__link::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1.5px;
+  background: var(--cobalt); transform: scaleX(0); transform-origin: left center;
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav__link:hover { color: var(--ink); }
+.nav__link:hover::after { transform: scaleX(1); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 18px; border-radius: var(--r-md);
+  font-size: 14px; font-weight: 500; border: 1px solid transparent;
+  white-space: nowrap;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+}
+.btn:hover { transform: translateY(-1.5px); }
+.btn:active { transform: translateY(0); }
+.btn--primary { background: var(--cobalt); color: #FFFFFF; }
+.btn--primary:hover { background: var(--cobalt-hover); box-shadow: 0 10px 22px -12px rgba(49, 91, 206, 0.58); }
+.btn--dark { background: var(--ink); color: var(--bg-paper); }
+.btn--dark:hover { background: #2D2B28; box-shadow: 0 10px 22px -12px rgba(23, 23, 23, 0.45); }
+.btn--ghost { background: var(--bg-surface); color: var(--ink); border-color: var(--border-strong); }
+.btn--ghost:hover { border-color: var(--ink); box-shadow: 0 8px 18px -14px rgba(23, 23, 23, 0.22); }
+.btn--lg { height: 48px; padding: 0 24px; font-size: 15px; }
+.btn svg { width: 15px; height: 15px; flex-shrink: 0; transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+.btn:hover svg { transform: translateX(3px); }
+
+/* ==========================================================================
+   ACT I: P4-Inspired Centered Editorial Cover -> Centered Live Workbench Theater
+   Desktop: 255vh scroll track (= 1.55 viewports of continuous narrative)
+   Zero peek of next section at scrollY = 0!
+   ========================================================================== */
+.cover-stage {
+  position: relative;
+  height: 255vh;
+}
+.cover-sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-paper);
+}
+.cover-backdrop {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(62% 56% at 50% 52%, rgba(255, 255, 255, 0.55) 0%, rgba(232, 225, 213, 0.85) 100%);
+  opacity: 0;
+  will-change: opacity;
+}
+
+/* --- Centered Monumental Cover Typography (P4-inspired with Inline Live Capsule!) --- */
+.cover-center {
+  position: relative; z-index: 4;
+  width: min(820px, calc(100vw - 80px));
+  margin-top: 32px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center;
+  will-change: transform, opacity;
+}
+.cover-subtag {
+  font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-muted); margin-bottom: 22px; font-weight: 500;
+}
+.cover-title {
+  margin: 0 0 24px;
+  font-family: var(--font-serif);
+  font-size: clamp(44px, 5.2vw, 72px);
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+/* P4 signature: inline live product capsule embedded directly in the display headline */
+.title-capsule {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  vertical-align: middle;
+  height: 2.35em;
+  padding: 0 1.1em;
+  margin: 0 0.28em;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1A1A18 0%, #2C395A 100%);
+  color: #F5F2EC;
+  border: 1px solid rgba(23, 23, 23, 0.14);
+  box-shadow: 0 10px 26px -12px rgba(49, 91, 206, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  font-family: var(--font-sans);
+  font-size: 0.25em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  transform: translateY(-0.22em);
+  white-space: nowrap;
+}
+.title-capsule__dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(232, 201, 122, 0.28);
+}
+.title-capsule__bars {
+  display: inline-flex; align-items: center; gap: 2px; height: 12px;
+}
+.title-capsule__bars i {
+  display: block; width: 2px; border-radius: 2px; background: rgba(245, 242, 236, 0.85);
+}
+.title-capsule__bars i:nth-child(1) { height: 6px; }
+.title-capsule__bars i:nth-child(2) { height: 12px; background: var(--amber); }
+.title-capsule__bars i:nth-child(3) { height: 8px; }
+.cover-title .hl {
+  background: linear-gradient(transparent 66%, rgba(232, 201, 122, 0.56) 66%, rgba(232, 201, 122, 0.56) 92%, transparent 92%);
+  padding: 0 3px;
+}
+.cover-lead {
+  margin: 0 0 34px;
+  max-width: 540px;
+  font-size: 16.5px; line-height: 1.72; color: var(--ink-secondary);
+}
+.cover-actions {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px;
+}
+
+/* --- P4-Inspired Polaroid / Index-Card Artifacts Framing the Cover Edges --- */
+.polaroid {
+  position: absolute; z-index: 3;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 10px 12px;
+  box-shadow: var(--shadow-polaroid);
+  width: 232px;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+  will-change: transform, opacity;
+}
+.polaroid:hover { border-color: var(--border-strong); }
+.polaroid--tl { left: max(22px, calc(50% - 610px)); top: 152px; }
+.polaroid--bl { left: max(46px, calc(50% - 575px)); bottom: 72px; width: 244px; }
+.polaroid--mr { right: max(22px, calc(50% - 610px)); top: 248px; width: 246px; }
+
+.polaroid__frame {
+  background: var(--bg-warm-soft);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 11px 12px;
+  text-align: left;
+  display: grid; gap: 5px;
+}
+.polaroid__k { font-size: 10.5px; font-weight: 600; color: var(--cobalt); letter-spacing: 0.04em; }
+.polaroid__h { font-family: var(--font-serif); font-size: 13.5px; font-weight: 600; color: var(--ink); line-height: 1.35; }
+.polaroid__p { font-size: 11.5px; color: var(--ink-secondary); line-height: 1.48; margin: 0; }
+.polaroid__zh { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.45; margin: 0; }
+.polaroid__bar {
+  margin-top: 2px; padding-left: 8px; border-left: 2.5px solid var(--amber);
+  font-size: 11.5px; color: var(--ink); font-weight: 500; line-height: 1.45;
+}
+.polaroid__cap {
+  margin-top: 9px; padding: 0 3px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px; color: var(--ink-muted); font-weight: 500;
+}
+.polaroid__cap b { color: var(--ink); font-weight: 600; }
+
+/* Bottom-center quiet scroll invitation */
+.cover-cue {
+  position: absolute; left: 50%; bottom: 26px; z-index: 5;
+  transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 12.5px; color: var(--ink-muted);
+  white-space: nowrap;
+  will-change: opacity, transform;
+}
+.cover-cue__line {
+  width: 28px; height: 1px; background: var(--border-strong);
+  position: relative; overflow: hidden;
+}
+.cover-cue__line::after {
+  content: ""; position: absolute; inset: 0; background: var(--cobalt);
+  transform: translateX(-100%);
+  animation: cueSlide 2.2s ease-in-out infinite;
+}
+@keyframes cueSlide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
+}
+
+/* --- Stage Narrative Pill (Sits cleanly below 52px compact nav during unfolded theater) --- */
+.stage-caption {
+  position: absolute; top: 70px; left: 50%; z-index: 10;
+  transform: translateX(-50%) translateY(10px);
+  opacity: 0;
+  display: flex; align-items: center; gap: 14px;
+  padding: 7px 16px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px -16px rgba(23, 23, 23, 0.22);
+  font-size: 13px; color: var(--ink);
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: opacity, transform;
+}
+.stage-caption__step {
+  font-size: 11.5px; font-weight: 600; color: var(--cobalt);
+  background: var(--cobalt-soft); padding: 2px 8px; border-radius: 99px;
+}
+.stage-caption__text { font-weight: 500; color: var(--ink); }
+.stage-dots {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding-left: 8px; border-left: 1px solid var(--border);
+}
+.stage-dots i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border-strong);
+  transition: background-color 0.22s ease, transform 0.22s ease;
+}
+.stage-dots i.is-on { background: var(--cobalt); transform: scale(1.25); }
+
+/* --- The Rising & Unfolding Full Authentic Dual-Column Anti Lecture Workbench --- */
+.stage-frame-wrap {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  width: min(1140px, calc(100vw - 88px));
+  z-index: 5;
+  transform-origin: center center;
+  opacity: 0;
+  transform: translate3d(-50%, -50%, 0) translate3d(0, 26%, 0) scale(0.78);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.live-wb {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(23, 23, 23, 0.05), 0 30px 70px -26px rgba(23, 23, 23, 0.28);
+  overflow: hidden;
+}
+.live-wb__chrome {
+  height: 44px; padding: 0 16px;
+  background: var(--bg-paper);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  font-size: 12.5px;
+}
+.live-wb__left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.live-wb__dots { display: flex; gap: 5px; }
+.live-wb__dots i { width: 8px; height: 8px; border-radius: 50%; background: #D7D0C5; }
+.live-wb__logo { font-family: var(--font-serif); font-weight: 700; font-size: 14px; color: var(--ink); }
+.live-wb__sep { width: 1px; height: 13px; background: var(--border-strong); }
+.live-wb__file { font-weight: 500; color: var(--ink-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-wb__right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.live-wb__rec {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 99px;
+  background: var(--cobalt-soft); color: var(--cobalt);
+  font-size: 12px; font-weight: 500;
+}
+.live-wb__rec i { width: 6px; height: 6px; border-radius: 50%; background: var(--cobalt); }
+.live-wb__page-pill {
+  padding: 3px 10px; border-radius: 99px;
+  background: var(--bg-warm-tint); color: var(--ink-secondary);
+  font-size: 12px; font-weight: 500;
+}
+
+.live-wb__body {
+  display: grid;
+  grid-template-columns: minmax(0, 62%) minmax(0, 38%);
+  min-height: 492px;
+}
+.live-wb__left-pane {
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-paper);
+}
+.live-wb__slide-bar {
+  height: 36px; padding: 0 14px;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--ink-muted);
+}
+.live-wb__follow-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 99px;
+  background: var(--cobalt-soft); color: var(--cobalt);
+  font-weight: 600; font-size: 11.5px;
+}
+.live-wb__follow-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--cobalt); }
+
+.live-wb__desk-stage {
+  flex: 1; padding: 18px 20px; background: var(--bg-warm-tint);
+  display: flex; align-items: center; justify-content: center;
+}
+.live-wb__pdf-page {
+  width: 100%; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px 22px;
+  box-shadow: 0 6px 20px -12px rgba(23, 23, 23, 0.16);
+  display: flex; flex-direction: column; gap: 11px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.live-wb__pdf-k { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: var(--cobalt); }
+.live-wb__pdf-page h3 {
+  margin: 0; font-family: var(--font-serif); font-size: 19px; font-weight: 600;
+  color: var(--ink); line-height: 1.3;
+}
+.live-wb__pdf-page ul {
+  margin: 0; padding-left: 18px; display: grid; gap: 6px;
+  font-size: 13px; color: var(--ink-secondary); line-height: 1.5;
+}
+.live-wb__pdf-flow {
+  margin-top: 4px; padding-top: 11px; border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  font-size: 12px; text-align: center;
+}
+.live-wb__pdf-flow span {
+  background: var(--bg-warm-soft); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; color: var(--ink); font-weight: 500;
+}
+
+.live-wb__strip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px; background: var(--bg-warm-soft);
+  border-top: 1px solid var(--border);
+  font-size: 11.5px; color: var(--ink-muted);
+}
+.live-wb__chip {
+  padding: 2px 9px; border-radius: 99px;
+  border: 1px solid var(--border); background: var(--bg-surface); font-weight: 500;
+  transition: background-color 0.28s ease, color 0.28s ease, border-color 0.28s ease;
+}
+.live-wb__chip.is-active { background: var(--cobalt); border-color: var(--cobalt); color: #FFFFFF; }
+
+.live-wb__summary {
+  background: var(--bg-warm-soft);
+  border-top: 1px solid var(--border-strong);
+  border-left: 3.5px solid var(--amber);
+  padding: 12px 16px 14px;
+  transition: background-color 0.3s ease;
+  will-change: clip-path, opacity;
+}
+.live-wb__sum-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 6px; font-size: 12.5px; font-weight: 600; color: var(--ink);
+}
+.live-wb__sum-head-l { display: flex; align-items: center; gap: 7px; }
+.live-wb__pbadge {
+  padding: 1px 7px; border-radius: 5px;
+  background: var(--cobalt-soft); color: var(--cobalt); font-size: 11.5px; font-weight: 600;
+}
+.live-wb__amber-tag {
+  padding: 2px 8px; border-radius: 99px;
+  background: var(--amber-soft); color: var(--amber-ink); font-size: 11px; font-weight: 600;
+}
+.live-wb__sum-lead {
+  margin: 0 0 5px; padding-left: 9px; border-left: 2.5px solid var(--cobalt);
+  font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.48;
+}
+.live-wb__sum-bullets {
+  margin: 0; padding-left: 16px; display: grid; gap: 3px;
+  font-size: 12px; color: var(--ink-secondary); line-height: 1.48;
+}
+
+.live-wb__right-pane { display: flex; flex-direction: column; background: var(--bg-paper); }
+.live-wb__tabs {
+  height: 36px; padding: 0 12px;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: stretch; gap: 14px;
+  font-size: 12px; font-weight: 500; color: var(--ink-muted);
+}
+.live-wb__tabs span { display: inline-flex; align-items: center; position: relative; }
+.live-wb__tabs .is-on { color: var(--cobalt); font-weight: 600; }
+.live-wb__tabs .is-on::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--cobalt);
+}
+.live-wb__cards { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.live-wb__card {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 12px; display: grid; gap: 5px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+}
+.live-wb__card-top {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; color: var(--ink-muted);
+}
+.live-wb__card-en { font-size: 12px; color: var(--ink-secondary); line-height: 1.45; }
+.live-wb__card-zh { font-size: 13.5px; color: var(--ink); font-weight: 500; line-height: 1.48; }
+.live-wb__anno {
+  background: var(--bg-warm-soft); border-left: 2.5px solid var(--cobalt);
+  border-radius: 0 5px 5px 0; padding: 5px 8px;
+  font-size: 11.5px; color: var(--ink-secondary);
+}
+.live-wb__anno strong { color: var(--cobalt); font-weight: 600; }
+.live-wb__dock {
+  padding: 9px 12px; background: var(--bg-warm-soft);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 12px; color: var(--ink-secondary);
+}
+.live-wb__dock-l { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.live-wb__dock-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 99px;
+  background: var(--cobalt-soft); color: var(--cobalt);
+  font-size: 11px; font-weight: 600; flex-shrink: 0;
+}
+.live-wb__dock-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--cobalt); }
+.live-wb__dock-btn {
+  padding: 3px 9px; border-radius: 5px;
+  border: 1px solid var(--border-strong); background: var(--bg-surface);
+  font-size: 11.5px; color: var(--ink); font-weight: 500;
+}
+
+.live-wb.focus-slide .live-wb__pdf-page {
+  border-color: rgba(49, 91, 206, 0.45);
+  box-shadow: 0 0 0 3px rgba(49, 91, 206, 0.08), 0 10px 26px -14px rgba(23, 23, 23, 0.18);
+}
+.live-wb.focus-bilingual .live-wb__card--top {
+  border-color: rgba(49, 91, 206, 0.48);
+  box-shadow: 0 0 0 3px rgba(49, 91, 206, 0.08);
+}
+.live-wb.focus-summary .live-wb__summary { background: #FCF9F0; }
+
+/* ==========================================================================
+   ACT II: Workbench Reading Philosophy (Own Clean Scene)
+   ========================================================================== */
+.workbench-section {
+  min-height: 88svh;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 108px 0 96px;
+  background: var(--bg-paper);
+  border-top: 1px solid var(--border);
+}
+.wb-intro-head {
+  display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+  gap: 48px; align-items: end; margin-bottom: 52px;
+}
+.eyebrow {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--cobalt); margin-bottom: 12px;
+}
+.section-title {
+  margin: 0; font-family: var(--font-serif);
+  font-size: clamp(30px, 3.2vw, 42px);
+  font-weight: 600; line-height: 1.24; letter-spacing: -0.02em; color: var(--ink);
+}
+.section-lead { margin: 0; font-size: 16px; color: var(--ink-secondary); line-height: 1.74; }
+
+.wb-pillars {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px; padding-top: 34px; border-top: 1px solid var(--border);
+}
+.wb-pillar {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 24px 22px; background: var(--bg-warm-soft);
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, border-color 0.2s ease;
+}
+.wb-pillar:hover { transform: translateY(-4px); border-color: var(--border-strong); box-shadow: var(--shadow-card); }
+.wb-pillar--offset { margin-top: 22px; }
+.wb-pillar__num {
+  width: 34px; height: 24px; border-radius: 5px;
+  background: var(--amber-soft); color: var(--amber-ink);
+  font-size: 12px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.wb-pillar h3 { margin: 4px 0 0; font-family: var(--font-serif); font-size: 19px; font-weight: 600; color: var(--ink); }
+.wb-pillar p { margin: 0; font-size: 14.5px; color: var(--ink-secondary); line-height: 1.66; }
+
+.capability-strip {
+  margin-top: 52px; padding: 18px 22px; border-radius: var(--r-md);
+  background: var(--bg-warm-tint);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px 20px; font-size: 13.5px; font-weight: 500; color: var(--ink-secondary);
+}
+.capability-strip span { display: inline-flex; align-items: center; gap: 8px; }
+.capability-strip span::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--cobalt); }
+
+/* ==========================================================================
+   ACT III: P5-Inspired Espresso-Ink Cinema Band + Quiet Champagne Ticker
+   ========================================================================== */
+.cinema {
+  background: var(--dark-band);
+  color: var(--dark-ink);
+  padding: 0 0 108px;
+}
+/* P5-inspired quiet horizontal ticker band framing the cinema transition */
+.cinema-ticker {
+  border-top: 1px solid var(--dark-border);
+  border-bottom: 1px solid var(--dark-border);
+  background: rgba(232, 201, 122, 0.04);
+  overflow: hidden;
+  padding: 13px 0;
+  margin-bottom: 84px;
+}
+.cinema-ticker__track {
+  display: flex; align-items: center; gap: 38px;
+  width: max-content;
+  font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(232, 201, 122, 0.78);
+  animation: tickerRoll 36s linear infinite;
+}
+.cinema-ticker:hover .cinema-ticker__track { animation-play-state: paused; }
+.cinema-ticker__track span { white-space: nowrap; }
+.cinema-ticker__track i {
+  display: inline-block; width: 4px; height: 4px; border-radius: 50%;
+  background: rgba(232, 201, 122, 0.45); vertical-align: middle;
+}
+@keyframes tickerRoll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.cinema__head {
+  display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+  gap: 40px; align-items: end;
+  padding-bottom: 36px; border-bottom: 1px solid var(--dark-border-soft);
+}
+.cinema__eyebrow {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--amber); margin-bottom: 12px;
+}
+.cinema__title {
+  margin: 0; font-family: var(--font-serif);
+  font-size: clamp(30px, 3.2vw, 42px); font-weight: 600; line-height: 1.24; color: var(--dark-ink);
+}
+.cinema__lead { margin: 0; font-size: 15.5px; color: var(--dark-muted); line-height: 1.72; }
+
+.flow-track {
+  position: relative;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px; padding-top: 44px;
+}
+.flow-track::before {
+  content: ""; position: absolute; top: 61px; left: 40px; right: 40px; height: 1px;
+  background: linear-gradient(90deg, rgba(232, 201, 122, 0.5), rgba(49, 91, 206, 0.55), rgba(232, 201, 122, 0.5));
+}
+.flow-step { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 18px; }
+.flow-step__marker {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--dark-band); width: fit-content; padding-right: 12px;
+}
+.flow-step__idx {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid rgba(232, 201, 122, 0.52); background: var(--dark-surface);
+  color: var(--amber); font-family: var(--font-serif); font-size: 14px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background-color 0.22s ease, color 0.22s ease;
+}
+.flow-step:hover .flow-step__idx { background: var(--amber); color: var(--dark-band); }
+.flow-step__tag { font-size: 12.5px; color: var(--dark-muted); font-weight: 500; }
+.flow-step h3 { margin: 0; font-family: var(--font-serif); font-size: 21px; font-weight: 600; color: var(--dark-ink); }
+.flow-step p { margin: 0; font-size: 14.5px; color: var(--dark-muted); line-height: 1.66; }
+
+.flow-visual {
+  margin-top: auto; background: var(--dark-surface);
+  border: 1px solid var(--dark-border-soft); border-radius: 12px;
+  padding: 16px; display: grid; gap: 9px;
+  transition: border-color 0.25s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.flow-step:hover .flow-visual { border-color: rgba(232, 201, 122, 0.45); transform: translateY(-3px); }
+.fv-bar { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--dark-muted); }
+.fv-bar b { color: var(--amber); font-weight: 500; }
+.fv-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 7px; background: rgba(245, 242, 236, 0.05);
+  font-size: 12.5px; color: var(--dark-ink);
+}
+.fv-row span { color: var(--dark-muted); font-size: 11.5px; white-space: nowrap; }
+.fv-sub {
+  padding: 11px 12px; border-radius: 8px; background: rgba(245, 242, 236, 0.06);
+  border-left: 2.5px solid var(--cobalt); display: grid; gap: 4px;
+}
+.fv-sub small { font-size: 12px; color: var(--dark-muted); }
+.fv-sub strong { font-size: 13.5px; color: var(--amber); font-weight: 500; line-height: 1.48; }
+
+/* ==========================================================================
+   ACT IV & V: Plans (Free / Pro ¥4.9 / Ultra ¥8.9) + Privacy & FAQ
+   ========================================================================== */
+.pricing { padding: 108px 0 96px; background: var(--bg-paper); border-bottom: 1px solid var(--border); }
+.pricing__head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 24px; margin-bottom: 44px;
+}
+.pricing__head p { margin: 0; max-width: 460px; font-size: 15px; color: var(--ink-secondary); }
+.tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; align-items: stretch; }
+.tier {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 28px 26px; display: flex; flex-direction: column;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease;
+}
+.tier:hover { transform: translateY(-4px); box-shadow: var(--shadow-polaroid); }
+.tier--pro { border-color: var(--cobalt); box-shadow: 0 0 0 1px rgba(49, 91, 206, 0.14), var(--shadow-card); }
+.tier--ultra { background: var(--bg-warm-soft); border-color: #D7C38E; }
+.tier__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.tier__name { font-family: var(--font-serif); font-size: 22px; font-weight: 700; color: var(--ink); }
+.tier__badge { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 99px; }
+.tier__badge--free { background: var(--bg-warm-tint); color: var(--ink-secondary); }
+.tier__badge--pro { background: var(--cobalt-soft); color: var(--cobalt); }
+.tier__badge--ultra { background: var(--amber-soft); color: var(--amber-ink); }
+.tier__price { display: flex; align-items: baseline; gap: 4px; margin-bottom: 10px; }
+.tier__price strong { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+.tier__price span { font-size: 13.5px; color: var(--ink-muted); }
+.tier__desc { margin: 0 0 20px; font-size: 14px; color: var(--ink-secondary); line-height: 1.58; min-height: 44px; }
+.tier__list {
+  margin: 0 0 24px; padding: 18px 0 0; list-style: none;
+  border-top: 1px solid var(--border); display: grid; gap: 10px; font-size: 14px; color: var(--ink); flex: 1;
+}
+.tier__list li { display: flex; align-items: flex-start; gap: 9px; line-height: 1.5; }
+.tier__list li::before { content: "✓"; color: var(--cobalt); font-weight: 700; flex-shrink: 0; }
+.tier--ultra .tier__list li::before { color: var(--amber-ink); }
+.tier__list li.muted-item { color: var(--ink-muted); }
+.tier__list li.muted-item::before { content: "·"; color: var(--ink-muted); }
+
+.faq-section { padding: 96px 0; background: var(--bg-paper); }
+.faq__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 54px; margin-top: 36px; }
+.faq__item { padding-top: 20px; border-top: 1px solid var(--border); transition: border-color 0.2s ease; }
+.faq__item:hover { border-top-color: var(--cobalt); }
+.faq__item h3 { margin: 0 0 8px; font-size: 15.5px; font-weight: 600; color: var(--ink); }
+.faq__item p { margin: 0; font-size: 14px; color: var(--ink-secondary); line-height: 1.68; }
+
+.closing { padding: 76px 0 44px; border-top: 1px solid var(--border); background: var(--bg-warm-tint); }
+.closing__cta {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 24px; padding-bottom: 44px; border-bottom: 1px solid var(--border-strong);
+}
+.closing__cta h2 { margin: 0 0 8px; font-family: var(--font-serif); font-size: clamp(26px, 2.8vw, 34px); font-weight: 600; color: var(--ink); }
+.closing__cta p { margin: 0; font-size: 15px; color: var(--ink-secondary); }
+.footer__bottom {
+  padding-top: 26px; display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 16px; font-size: 13.5px; color: var(--ink-muted);
+}
+.footer__links { display: flex; align-items: center; gap: 22px; }
+.footer__links a:hover { color: var(--ink); }
+
+html.has-anim [data-reveal] {
+  opacity: 0; transform: translateY(16px);
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--rd, 0ms);
+}
+html.has-anim [data-reveal].is-visible { opacity: 1; transform: none; }
+
+/* ==========================================================================
+   Narrow Desktop (<1180px hides outer Polaroids if too tight) & Mobile / Reduced Motion
+   ========================================================================== */
+@media (max-width: 1220px) {
+  .polaroid { width: 204px; }
+  .polaroid--tl { left: 16px; }
+  .polaroid--bl { left: 24px; }
+  .polaroid--mr { right: 16px; }
+}
+@media (max-width: 1023px), (prefers-reduced-motion: reduce) {
+  .nav__index { display: none; }
+  .cover-stage { height: auto !important; }
+  .cover-sticky {
+    position: relative !important; height: auto !important; min-height: 100svh;
+    padding: 96px 0 64px; flex-direction: column; gap: 40px; overflow: visible;
+  }
+  .cover-backdrop, .stage-caption, .cover-cue, .polaroid { display: none !important; }
+  .cover-center { margin-top: 0; opacity: 1 !important; transform: none !important; }
+  .stage-frame-wrap {
+    position: relative !important; left: auto !important; top: auto !important;
+    width: var(--wrap) !important; opacity: 1 !important; transform: none !important;
+    pointer-events: auto !important;
+  }
+  .live-wb__summary { clip-path: none !important; opacity: 1 !important; }
+  .live-wb__card { opacity: 1 !important; transform: none !important; }
+  .wb-intro-head, .cinema__head { grid-template-columns: 1fr; gap: 20px; }
+  .wb-pillars, .flow-track, .tiers { grid-template-columns: 1fr; }
+  .wb-pillar--offset { margin-top: 0; }
+  .flow-track::before { display: none; }
+}
+
+@media (max-width: 720px) {
+  :root { --wrap: min(100vw - 32px, 1240px); }
+  .nav__links { display: none; }
+  .title-capsule { display: none; }
+  .live-wb__dots, .live-wb__sep, .live-wb__file { display: none; }
+  .live-wb__chrome { padding: 0 12px; gap: 8px; }
+  .live-wb__pdf-flow { grid-template-columns: 1fr; }
+  .live-wb__body { grid-template-columns: 1fr; min-height: auto; }
+  .live-wb__left-pane { border-right: 0; border-bottom: 1px solid var(--border); }
+  .faq__grid { grid-template-columns: 1fr; }
+  .workbench-section, .cinema, .pricing, .faq-section { padding: 68px 0; min-height: auto; }
+  .cinema-ticker { margin-bottom: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html.has-anim [data-reveal] { opacity: 1 !important; transform: none !important; }
+}
+</style>
+<script>document.documentElement.classList.add('has-anim');</script>
+</head>
+<body>
+
+<header class="nav" id="siteNav">
+  <div class="nav__index" aria-hidden="true">
+    <div class="wrap nav__index-inner">
+      <span>ANTI LECTURE · NO. 01 / 高校全英文课堂双语现场</span>
+      <span>PDF 原版跟页 · 实时双语 · 逐页综合总结</span>
+      <span>FREE ¥0 · PRO ¥4.9 · ULTRA ¥8.9</span>
+    </div>
+  </div>
+  <div class="wrap nav__bar">
+    <a class="brand" href="#top">Anti Lecture<span class="brand__dot" aria-hidden="true"></span></a>
+    <div class="nav__right">
+      <nav class="nav__links" aria-label="主导航">
+        <a class="nav__link" href="#workbench">工作台</a>
+        <a class="nav__link" href="#workflow">课堂流程</a>
+        <a class="nav__link" href="#pricing">会员方案</a>
+        <a class="nav__link" href="#faq">常见问答</a>
+      </nav>
+      <a class="btn btn--primary" href="/app/">打开听课工作台</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <!-- ======================================================================
+       ACT I: P4-Inspired Centered Editorial Cover -> Scroll-Driven Live Workbench
+       ====================================================================== -->
+  <section class="cover-stage" id="coverStage" aria-labelledby="cover-h">
+    <div class="cover-sticky" id="coverSticky">
+      <div class="cover-backdrop" id="coverBackdrop" aria-hidden="true"></div>
+
+      <!-- Calm Narrative Pill (visible below compact nav during unfolded workbench stages) -->
+      <div class="stage-caption" id="stageCaption" aria-live="polite">
+        <span class="stage-caption__step t-num" id="stageStepBadge">01 · 自动跟页</span>
+        <span class="stage-caption__text" id="stageStepText">展开为双栏听课工作台，随教授声音自动切至 Slide P7</span>
+        <span class="stage-dots" aria-hidden="true">
+          <i id="dot1" class="is-on"></i>
+          <i id="dot2"></i>
+          <i id="dot3"></i>
+        </span>
+      </div>
+
+      <!-- Edge-Framed Polaroid Study Cards (P4-inspired, never overlapping headline!) -->
+      <div class="polaroid polaroid--tl" id="polTL" aria-hidden="true">
+        <div class="polaroid__frame">
+          <span class="polaroid__k">SLIDE 07 · PDF</span>
+          <div class="polaroid__h">Retrieval-Augmented Generation</div>
+          <p class="polaroid__p">Retrieve top-k private chunks before answering to reduce hallucination.</p>
+        </div>
+        <div class="polaroid__cap"><b>原版 PDF 渲染</b><span class="t-num">P7 / 24</span></div>
+      </div>
+
+      <div class="polaroid polaroid--bl" id="polBL" aria-hidden="true">
+        <div class="polaroid__frame">
+          <span class="polaroid__k">LIVE · 24:12 · P7</span>
+          <p class="polaroid__p">Compare RAG against fine-tuning on update frequency.</p>
+          <p class="polaroid__zh">从知识更新频率对比 RAG 与模型微调的区别。</p>
+        </div>
+        <div class="polaroid__cap"><b>0.3s 实时双语</b><span>含术语批注</span></div>
+      </div>
+
+      <div class="polaroid polaroid--mr" id="polMR" aria-hidden="true">
+        <div class="polaroid__frame">
+          <span class="polaroid__k">SLIDE + 口述总结</span>
+          <div class="polaroid__bar">先检索私域文档再生成，降低幻觉；教授提示期中会考与微调的成本对比。</div>
+        </div>
+        <div class="polaroid__cap"><b>逐页综合总结</b><span>翻页自动沉淀</span></div>
+      </div>
+
+      <!-- Centered Monumental Editorial Cover -->
+      <div class="cover-center" id="coverCenter">
+        <div class="cover-subtag">Anti Lecture · 把每一堂全英文课，变成可阅读的学习现场</div>
+        <h1 class="cover-title" id="cover-h">
+          听懂<span class="title-capsule" aria-hidden="true"><span class="title-capsule__dot"></span><span class="title-capsule__bars"><i></i><i></i><i></i></span><span class="t-num">P7 跟页中</span></span>每一页，<br>
+          留下<span class="hl">整堂课</span>的清楚记录
+        </h1>
+        <p class="cover-lead">上传教授的 PDF 课件，听课时实时双语翻译、随声音自动匹配页码，并在每页讲完后自动沉淀一份综合总结。</p>
+        <div class="cover-actions">
+          <a class="btn btn--primary btn--lg" href="/app/">
+            <span>打开听课工作台</span>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <a class="btn btn--ghost btn--lg" href="#workbench">了解工作台</a>
+        </div>
+      </div>
+
+      <div class="cover-cue" id="coverCue" aria-hidden="true">
+        <span class="cover-cue__line"></span>
+        <span>向下滚动，展开真实双栏听课工作台</span>
+      </div>
+
+      <!-- Rising & Expanding Authentic Dual-Column Anti Lecture Workbench -->
+      <div class="stage-frame-wrap" id="stageFrameWrap">
+        <div class="live-wb" id="liveWb" role="img" aria-label="Anti Lecture 真实双栏听课工作台：左侧原版 PDF 课件与本页综合总结，右侧实时双语翻译与听音条">
+          <div class="live-wb__chrome">
+            <div class="live-wb__left">
+              <span class="live-wb__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="live-wb__logo">Anti Lecture</span>
+              <span class="live-wb__sep" aria-hidden="true"></span>
+              <span class="live-wb__file">PE6201_Enterprise_AI_Week05.pdf</span>
+            </div>
+            <div class="live-wb__right t-num">
+              <span class="live-wb__rec"><i></i>正在收音 00:24:18</span>
+              <span class="live-wb__page-pill" id="wbPagePill">第 7 / 24 页</span>
+            </div>
+          </div>
+
+          <div class="live-wb__body">
+            <!-- Left 62%: PDF Stage + Page Strip + Masked-Reveal Per-Page Summary -->
+            <div class="live-wb__left-pane">
+              <div class="live-wb__slide-bar">
+                <span class="t-num">原版 PDF 高清渲染 · 公式与图表零走样</span>
+                <span class="live-wb__follow-chip"><i></i>自动跟页中</span>
+              </div>
+
+              <div class="live-wb__desk-stage">
+                <div class="live-wb__pdf-page">
+                  <span class="live-wb__pdf-k">SLIDE 07 · ENTERPRISE LLM ARCHITECTURE</span>
+                  <h3>Retrieval-Augmented Generation (RAG)</h3>
+                  <ul>
+                    <li>Index private course &amp; enterprise documents into a vector store</li>
+                    <li>Retrieve top-k relevant chunks before generating the LLM answer</li>
+                    <li>Reduce hallucination with verifiable, up-to-date citations</li>
+                  </ul>
+                  <div class="live-wb__pdf-flow">
+                    <span>1. Query 向量化</span>
+                    <span>2. Top-K 语义检索</span>
+                    <span>3. 带依据生成</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="live-wb__strip t-num" aria-hidden="true">
+                <span class="live-wb__chip">P5</span>
+                <span class="live-wb__chip" id="chipP6">P6</span>
+                <span class="live-wb__chip is-active" id="chipP7">P7</span>
+                <span class="live-wb__chip">P8</span>
+                <span class="live-wb__chip">P9</span>
+              </div>
+
+              <div class="live-wb__summary" id="wbSummaryPanel">
+                <div class="live-wb__sum-head">
+                  <div class="live-wb__sum-head-l">
+                    <span class="live-wb__pbadge t-num">P7</span>
+                    <span>第 7 页 · Slide + 教授口述综合总结</span>
+                  </div>
+                  <span class="live-wb__amber-tag">翻页自动沉淀</span>
+                </div>
+                <p class="live-wb__sum-lead">RAG 通过「先检索、后生成」把私域文档注入上下文，解决大模型幻觉与知识过时问题。</p>
+                <ul class="live-wb__sum-bullets">
+                  <li>教授口述补充：期中考试会考 RAG 与 Fine-Tuning 在知识更新频率与成本上的对比。</li>
+                  <li>工程实践建议：优先对私有课程与企业政策文档建向量索引，再保留原文引用溯源。</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Right 38%: Calm Live Bilingual Stream + Serene Light Listening Dock -->
+            <div class="live-wb__right-pane">
+              <div class="live-wb__tabs" aria-hidden="true">
+                <span class="is-on">实时双语</span>
+                <span>总览与逐页</span>
+                <span>术语板书</span>
+              </div>
+
+              <div class="live-wb__cards">
+                <div class="live-wb__card live-wb__card--top" id="wbCard1">
+                  <div class="live-wb__card-top t-num"><span>24:12 · #16</span><span class="live-wb__pbadge">P7</span></div>
+                  <div class="live-wb__card-en">Before generating an LLM answer, RAG retrieves top-k relevant chunks with verifiable citations.</div>
+                  <div class="live-wb__card-zh">在生成大模型回答之前，RAG 会先检索最相关的前 k 个片段并保留可验证引用。</div>
+                  <div class="live-wb__anno"><strong>术语批注 · RAG：</strong>检索增强生成，避免模型凭空编造答案。</div>
+                </div>
+
+                <div class="live-wb__card" id="wbCard2">
+                  <div class="live-wb__card-top t-num"><span>23:48 · #15</span><span class="live-wb__pbadge">P7</span></div>
+                  <div class="live-wb__card-en">For your midterm, compare RAG against fine-tuning on update frequency and maintenance cost.</div>
+                  <div class="live-wb__card-zh">期中考试请重点从知识更新频率和维护成本对比 RAG 与微调的区别。</div>
+                </div>
+
+                <div class="live-wb__card" id="wbCard3">
+                  <div class="live-wb__card-top t-num"><span>22:55 · #14</span><span class="live-wb__pbadge">P6</span></div>
+                  <div class="live-wb__card-en">A central repository prevents duplicated master schemas across downstream line systems.</div>
+                  <div class="live-wb__card-zh">中央存储库能避免下游各业务线系统之间出现重复的主数据定义。</div>
+                </div>
+              </div>
+
+              <div class="live-wb__dock" aria-hidden="true">
+                <div class="live-wb__dock-l">
+                  <span class="live-wb__dock-badge"><i></i>听音中</span>
+                  <span>Now let's look at embedding similarity...</span>
+                </div>
+                <span class="live-wb__dock-btn">分段</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       ACT II: Calm Workbench Reading Scene
+       ====================================================================== -->
+  <section class="workbench-section" id="workbench" aria-labelledby="workbench-h">
+    <div class="wrap">
+      <div class="wb-intro-head" data-reveal>
+        <div>
+          <div class="eyebrow">01 / WORKBENCH · 回到讲台本身</div>
+          <h2 class="section-title" id="workbench-h">把注意力，<br>完整还给讲台与课件</h2>
+        </div>
+        <p class="section-lead">进入 Anti Lecture 工作台后，所有装饰都会退场。温暖的纸白底色、清晰区分的原文与译文层级、紧贴每一页 PDF 的单页总结，让你连续听完三小时大课也不觉疲惫。</p>
+      </div>
+
+      <div class="wb-pillars">
+        <article class="wb-pillar" data-reveal>
+          <span class="wb-pillar__num t-num">01</span>
+          <h3>课件与本页总结一体联动</h3>
+          <p>PDF 在浏览器本地高清渲染，公式与架构图零走样；紧贴课件下方的当前页综合总结随翻页实时同步，页码与结论一眼对应。</p>
+        </article>
+
+        <article class="wb-pillar wb-pillar--offset" data-reveal style="--rd: 80ms">
+          <span class="wb-pillar__num t-num">02</span>
+          <h3>同屏两段以上双语 + 真毛玻璃字幕</h3>
+          <p>收窄后的右侧栏专注双语对照，点击页码即跳回对应 Slide；支持页内可拖动真毛玻璃字幕条，也能一键弹出系统级独立置顶窗。</p>
+        </article>
+
+        <article class="wb-pillar" data-reveal style="--rd: 150ms">
+          <span class="wb-pillar__num t-num">03</span>
+          <h3>左侧可收起课程边栏，多课不丢</h3>
+          <p>新建课程前自动完整归档当前记录，登录账号后历史课程跨设备同步保存，复习时点开左侧边栏即可随时切回任意一堂课。</p>
+        </article>
+      </div>
+
+      <div class="capability-strip" data-reveal style="--rd: 180ms" aria-label="支持能力">
+        <span>支持英 / 中 / 日 / 德 / 法 5 种讲课语言</span>
+        <span>0.3 秒浏览器直连实时翻译</span>
+        <span>PDF 仅本地渲染不上传原文件</span>
+        <span>推荐桌面端 Chrome / Edge 116+</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       ACT III: P5-Inspired Espresso-Ink Cinema Band + Champagne Ticker
+       ====================================================================== -->
+  <section class="cinema" id="workflow" aria-labelledby="workflow-h">
+    <div class="cinema-ticker" aria-hidden="true">
+      <div class="cinema-ticker__track">
+        <span>PDF 原版渲染</span><i></i>
+        <span>0.3S 实时双语</span><i></i>
+        <span>语音自动跟页</span><i></i>
+        <span>逐页 SLIDE + 口述总结</span><i></i>
+        <span>真毛玻璃悬浮字幕</span><i></i>
+        <span>一键问问助教</span><i></i>
+        <span>WORD · MARKDOWN · SRT 导出</span><i></i>
+        <span>PDF 原版渲染</span><i></i>
+        <span>0.3S 实时双语</span><i></i>
+        <span>语音自动跟页</span><i></i>
+        <span>逐页 SLIDE + 口述总结</span><i></i>
+        <span>真毛玻璃悬浮字幕</span><i></i>
+        <span>一键问问助教</span><i></i>
+        <span>WORD · MARKDOWN · SRT 导出</span><i></i>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="cinema__head" data-reveal>
+        <div>
+          <div class="cinema__eyebrow">02 / LECTURE RHYTHM · 一堂课的完整动线</div>
+          <h2 class="cinema__title" id="workflow-h">上传课件，跟页听翻，逐页带走</h2>
+        </div>
+        <p class="cinema__lead">不需要同时切四五个窗口，也不用课后重听三小时录音。按教授讲课的真实时间轴，把课件、口述和复习讲义自然收拢成一条线。</p>
+      </div>
+
+      <div class="flow-track">
+        <article class="flow-step" data-reveal>
+          <div class="flow-step__marker">
+            <span class="flow-step__idx t-num">01</span>
+            <span class="flow-step__tag">课前 20 秒</span>
+          </div>
+          <h3>拖入 PDF，看清教学目标</h3>
+          <p>原版展示教授的 PDF 课件，同时梳理本节教学目标、页码模块脉络与核心术语预告，先建框架再听课。</p>
+          <div class="flow-visual" aria-hidden="true">
+            <div class="fv-bar"><span>课前课件总览</span><b class="t-num">24 页 PDF</b></div>
+            <div class="fv-row"><span>教学目标：理解中央存储库与 RAG</span><span>3 条</span></div>
+            <div class="fv-row"><span>P1–P5 引入 · P6–P14 架构 · P15–P24 合规</span><span>点页直达</span></div>
+          </div>
+        </article>
+
+        <article class="flow-step" data-reveal style="--rd: 90ms">
+          <div class="flow-step__marker">
+            <span class="flow-step__idx t-num">02</span>
+            <span class="flow-step__tag">课中实时</span>
+          </div>
+          <h3>开麦听翻，声音驱动跟页</h3>
+          <p>实时转写并输出双语卡片，结合讲课顺序自动匹配当前 Slide 页码；遇到难懂概念一键展开「问问助教」。</p>
+          <div class="flow-visual" aria-hidden="true">
+            <div class="fv-bar"><span>毛玻璃双语字幕 · 跟页 P7</span><b>0.3s 响应</b></div>
+            <div class="fv-sub">
+              <small>RAG retrieves verified chunks before answering.</small>
+              <strong>检索增强生成在作答前先拉取核验文档片段。</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="flow-step" data-reveal style="--rd: 170ms">
+          <div class="flow-step__marker">
+            <span class="flow-step__idx t-num">03</span>
+            <span class="flow-step__tag">课后复习</span>
+          </div>
+          <h3>逐页沉淀，三格式一键导出</h3>
+          <p>每讲完一页自动融合 Slide 原文与教授口述补充；下课后一键带走精排 Word、Markdown 或双语 SRT 字幕。</p>
+          <div class="flow-visual" aria-hidden="true">
+            <div class="fv-bar"><span>完整讲义导出</span><b>3 种格式</b></div>
+            <div class="fv-row"><span>精排双语讲义（含总览与逐页结论）</span><span>.docx</span></div>
+            <div class="fv-row"><span>Notion / Obsidian 笔记与字幕</span><span>.md / .srt</span></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       ACT IV: Clear 3-Tier Plans (Free / Pro ¥4.9 / Ultra ¥8.9)
+       ====================================================================== -->
+  <section class="pricing" id="pricing" aria-labelledby="pricing-h">
+    <div class="wrap">
+      <div class="pricing__head" data-reveal>
+        <div>
+          <div class="eyebrow">03 / PLANS · 透明的三档方案</div>
+          <h2 class="section-title" id="pricing-h">实时听翻免费，按需升级会员</h2>
+        </div>
+        <p>有自己 API Key 的同学选 Pro 最划算；不想折腾 Key、希望打开即用的同学选 Ultra 省心包月。工作台内支持微信与支付宝扫码付款激活。</p>
+      </div>
+
+      <div class="tiers">
+        <article class="tier" data-reveal>
+          <div class="tier__top">
+            <span class="tier__name">Free</span>
+            <span class="tier__badge tier__badge--free">永久免费</span>
+          </div>
+          <div class="tier__price t-num"><strong>¥0</strong><span>/ 月</span></div>
+          <p class="tier__desc">满足课堂实时听懂与浏览原版课件的核心刚需，打开即可开始。</p>
+          <ul class="tier__list">
+            <li>实时语音转写与双语翻译（不限时长）</li>
+            <li>页内毛玻璃字幕条 &amp; 独立置顶字幕窗</li>
+            <li>原版 PDF 课件本地高清浏览与缩放</li>
+            <li>多课程左侧边栏自动保存与切换</li>
+            <li class="muted-item">课前教学目标预览 &amp; 第 1 页总结预览</li>
+          </ul>
+          <a class="btn btn--ghost" href="/app/">免费开始听课</a>
+        </article>
+
+        <article class="tier tier--pro" data-reveal style="--rd: 70ms">
+          <div class="tier__top">
+            <span class="tier__name">Pro</span>
+            <span class="tier__badge tier__badge--pro">自带 Key · 推荐</span>
+          </div>
+          <div class="tier__price t-num"><strong>¥4.9</strong><span>/ 月</span></div>
+          <p class="tier__desc">适合有自己 Gemini / DeepSeek / OpenAI 等 API Key 的同学，全功能不限次数。</p>
+          <ul class="tier__list">
+            <li>包含 Free 全部功能</li>
+            <li>完整 PDF 课前总览（目标 + 脉络 + 术语预告）</li>
+            <li>声音驱动自动跟页 + 全课件逐页综合总结</li>
+            <li>无限次「问问助教」与整课精要提炼</li>
+            <li>完整导出 Word (.docx) / Markdown / SRT</li>
+            <li>支持自带任意厂商 API Key，留空自动用默认模型</li>
+          </ul>
+          <a class="btn btn--primary" href="/app/?upgrade=pro">进入工作台开通 Pro</a>
+        </article>
+
+        <article class="tier tier--ultra" data-reveal style="--rd: 140ms">
+          <div class="tier__top">
+            <span class="tier__name">Ultra</span>
+            <span class="tier__badge tier__badge--ultra">内置官方额度</span>
+          </div>
+          <div class="tier__price t-num"><strong>¥8.9</strong><span>/ 月</span></div>
+          <p class="tier__desc">零配置开箱即用，免填 API Key 直接调用官方内置高速大模型额度。</p>
+          <ul class="tier__list">
+            <li>包含 Pro 全部功能，无需申请任何 API Key</li>
+            <li>每月内置 40 堂课 PDF 课前 AI 总览</li>
+            <li>每月内置 1,200 页 Slide + 口述综合总结</li>
+            <li>每月内置 300 次「问问助教」与整课提炼</li>
+            <li>内置额度用完后仍可无缝切回自带 Key</li>
+            <li>登录账号多设备同步历史课堂记录</li>
+          </ul>
+          <a class="btn btn--dark" href="/app/?upgrade=ultra">进入工作台开通 Ultra</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================================
+       ACT V: Privacy & FAQ
+       ====================================================================== -->
+  <section class="faq-section" id="faq" aria-labelledby="faq-h">
+    <div class="wrap">
+      <div class="eyebrow">04 / FAQ · 常见疑问与隐私说明</div>
+      <h2 class="section-title" id="faq-h">使用前你可能想知道的事</h2>
+      <div class="faq__grid" data-reveal>
+        <div class="faq__item">
+          <h3>注册账号需要绑定邮箱或手机号吗？</h3>
+          <p>不需要。只需设置一个「用户名 + 密码」即可 5 秒完成注册，用来保存你的会员状态和跨设备同步课程记录。因为未绑定邮箱，请妥善记住密码。</p>
+        </div>
+        <div class="faq__item">
+          <h3>支持微信和支付宝付款吗？怎么开通会员？</h3>
+          <p>支持。在工作台右上角点「登录 / 升级」，可直接使用微信或支付宝扫码支付 ¥4.9（Pro）或 ¥8.9（Ultra）并备注你的用户名，输入激活码后立即解锁全部功能。</p>
+        </div>
+        <div class="faq__item">
+          <h3>只填 API Key 不选模型能直接用吗？</h3>
+          <p>可以。设置面板会自动识别 Gemini、DeepSeek、OpenAI 等常见服务商，模型栏留空即自动匹配该厂商的默认高性价比模型，也可以自由手打任意最新模型名称。</p>
+        </div>
+        <div class="faq__item">
+          <h3>支持哪些格式的课件？教授发的是 PPTX 怎么办？</h3>
+          <p>目前专注支持 PDF 格式，以保证公式、图表和排版 100% 原封不动呈现且在浏览器本地零等待渲染。如果是 PPTX，在 PowerPoint 或 WPS 里「另存为 PDF」只需两秒即可上传。</p>
+        </div>
+        <div class="faq__item">
+          <h3>我的课件 PDF 和 API Key 会上传到服务器吗？</h3>
+          <p>PDF 课件只在你的浏览器内存中渲染，绝不上传原文件；个人 API Key 仅保存在你当前浏览器的本地存储中。课程笔记按账号独立隔离，他人无法查看。</p>
+        </div>
+        <div class="faq__item">
+          <h3>哪些浏览器使用体验最好？</h3>
+          <p>语音实时转写和独立画中画双语置顶窗依赖桌面端 Chrome 或 Microsoft Edge 116 及以上版本，建议在笔记本电脑上配合教室麦克风或网课声音内录使用。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="closing">
+  <div class="wrap">
+    <div class="closing__cta" data-reveal>
+      <div>
+        <h2>下一堂课，用 Anti Lecture 留下整堂课的清楚笔记</h2>
+        <p>实时翻译免费开放，拖入 PDF 课件即可预览课前教学目标与首条逐页总结。</p>
+      </div>
+      <a class="btn btn--primary btn--lg" href="/app/">
+        <span>打开听课工作台</span>
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+    <div class="footer__bottom">
+      <span>© 2026 Anti Lecture · Author: Blueberry</span>
+      <div class="footer__links">
+        <a href="/app/">听课工作台</a>
+        <a href="#pricing">会员方案</a>
+        <a href="https://github.com/lyang091126-cmd/lecture-scribe" target="_blank" rel="noopener noreferrer">GitHub 源码</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const mapRange = (v, a, b) => clamp((v - a) / (b - a), 0, 1);
+  const easeOut = (t) => 1 - Math.pow(1 - clamp(t), 3);
+  const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  const nav = document.getElementById('siteNav');
+  const stage = document.getElementById('coverStage');
+  const backdrop = document.getElementById('coverBackdrop');
+  const coverCenter = document.getElementById('coverCenter');
+  const cue = document.getElementById('coverCue');
+  const polTL = document.getElementById('polTL');
+  const polBL = document.getElementById('polBL');
+  const polMR = document.getElementById('polMR');
+  const frameWrap = document.getElementById('stageFrameWrap');
+  const caption = document.getElementById('stageCaption');
+  const stepBadge = document.getElementById('stageStepBadge');
+  const stepText = document.getElementById('stageStepText');
+  const dots = [document.getElementById('dot1'), document.getElementById('dot2'), document.getElementById('dot3')];
+  const liveWb = document.getElementById('liveWb');
+  const wbSummary = document.getElementById('wbSummaryPanel');
+  const wbCard1 = document.getElementById('wbCard1');
+  const wbCard2 = document.getElementById('wbCard2');
+  const chipP6 = document.getElementById('chipP6');
+  const chipP7 = document.getElementById('chipP7');
+  const wbPagePill = document.getElementById('wbPagePill');
+
+  const mqDesktop = window.matchMedia('(min-width: 1024px)');
+  const mqReduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let rafId = null;
+  let mouseNX = 0, mouseNY = 0;
+
+  function renderScrollTheater() {
+    rafId = null;
+    const y = window.scrollY || 0;
+
+    if (!stage || !mqDesktop.matches || mqReduced.matches) {
+      nav?.classList.remove('is-compact');
+      nav?.classList.toggle('is-scrolled', y > 16);
+      return;
+    }
+
+    const rect = stage.getBoundingClientRect();
+    const totalScrollable = Math.max(1, stage.offsetHeight - window.innerHeight);
+    const p = clamp(-rect.top / totalScrollable, 0, 1);
+
+    // Nav: hides index strip & compacts cleanly during theater
+    const inTheater = p > 0.05 && p < 0.96;
+    nav?.classList.toggle('is-compact', inTheater);
+    nav?.classList.toggle('is-scrolled', p >= 0.96);
+
+    // 1. Centered monumental cover lifts & parts away (p: 0.02 -> 0.30)
+    const coverOut = easeInOut(mapRange(p, 0.02, 0.30));
+    if (coverCenter) {
+      coverCenter.style.opacity = (1 - coverOut).toFixed(3);
+      coverCenter.style.transform = `translate3d(0, ${(-58 * coverOut).toFixed(1)}px, 0) scale(${(1 - 0.06 * coverOut).toFixed(4)})`;
+      coverCenter.style.pointerEvents = coverOut > 0.55 ? 'none' : 'auto';
+    }
+    if (cue) {
+      const cueOut = easeOut(mapRange(p, 0.0, 0.14));
+      cue.style.opacity = (1 - cueOut).toFixed(3);
+      cue.style.transform = `translateX(-50%) translateY(${(12 * cueOut).toFixed(1)}px)`;
+    }
+
+    // 2. Edge Polaroid study cards part gracefully outward with gentle pointer parallax at rest
+    const polOut = easeInOut(mapRange(p, 0.01, 0.32));
+    const pOp = (1 - polOut).toFixed(3);
+    const pxFactor = 1 - polOut;
+    if (polTL) {
+      polTL.style.opacity = pOp;
+      polTL.style.transform = `translate3d(${(-95 * polOut + mouseNX * 10 * pxFactor).toFixed(1)}px, ${(-38 * polOut + mouseNY * 8 * pxFactor).toFixed(1)}px, 0) rotate(${(-5.2 - 3 * polOut).toFixed(2)}deg)`;
+    }
+    if (polBL) {
+      polBL.style.opacity = pOp;
+      polBL.style.transform = `translate3d(${(-105 * polOut + mouseNX * 14 * pxFactor).toFixed(1)}px, ${(44 * polOut + mouseNY * 10 * pxFactor).toFixed(1)}px, 0) rotate(${(3.8 + 2.5 * polOut).toFixed(2)}deg)`;
+    }
+    if (polMR) {
+      polMR.style.opacity = pOp;
+      polMR.style.transform = `translate3d(${(105 * polOut + mouseNX * 12 * pxFactor).toFixed(1)}px, ${(-18 * polOut + mouseNY * 9 * pxFactor).toFixed(1)}px, 0) rotate(${(4.5 + 3 * polOut).toFixed(2)}deg)`;
+    }
+
+    // 3. Backdrop shifts from warm archival paper -> studio reading light
+    if (backdrop) {
+      backdrop.style.opacity = easeInOut(mapRange(p, 0.12, 0.48)).toFixed(3);
+    }
+
+    // 4. Centered Full Workbench rises & expands into place (p: 0.12 -> 0.44)
+    const wbIn = easeInOut(mapRange(p, 0.12, 0.44));
+    const wbOp = easeOut(mapRange(p, 0.12, 0.30));
+    if (frameWrap) {
+      const ty = 24 * (1 - wbIn);
+      const sc = 0.78 + 0.22 * wbIn;
+      frameWrap.style.opacity = wbOp.toFixed(3);
+      frameWrap.style.transform = `translate3d(-50%, -50%, 0) translate3d(0, ${ty.toFixed(2)}%, 0) scale(${sc.toFixed(4)})`;
+      frameWrap.style.pointerEvents = wbOp > 0.7 ? 'auto' : 'none';
+    }
+
+    // 5. Narrative Pill + Sequential Workbench Focus (p: 0.38 -> 0.88)
+    const capIn = easeOut(mapRange(p, 0.36, 0.46));
+    if (caption) {
+      caption.style.opacity = capIn.toFixed(3);
+      caption.style.transform = `translateX(-50%) translateY(${(10 * (1 - capIn)).toFixed(1)}px)`;
+    }
+
+    const switchedToP7 = p >= 0.48;
+    chipP6?.classList.toggle('is-active', !switchedToP7 && p > 0.32);
+    chipP7?.classList.toggle('is-active', switchedToP7 || p <= 0.32);
+    if (wbPagePill) wbPagePill.textContent = (!switchedToP7 && p > 0.32) ? '第 6 / 24 页' : '第 7 / 24 页';
+
+    const card2In = easeOut(mapRange(p, 0.44, 0.56));
+    const card1In = easeOut(mapRange(p, 0.54, 0.66));
+    if (wbCard2) {
+      wbCard2.style.opacity = (0.52 + 0.48 * card2In).toFixed(3);
+      wbCard2.style.transform = `translateY(${(10 * (1 - card2In)).toFixed(1)}px)`;
+    }
+    if (wbCard1) {
+      wbCard1.style.opacity = (0.35 + 0.65 * card1In).toFixed(3);
+      wbCard1.style.transform = `translateY(${(14 * (1 - card1In)).toFixed(1)}px)`;
+    }
+
+    const sumReveal = easeOut(mapRange(p, 0.66, 0.84));
+    if (wbSummary) {
+      wbSummary.style.clipPath = `inset(0 0 ${((1 - sumReveal) * 100).toFixed(1)}% 0)`;
+      wbSummary.style.opacity = (0.15 + 0.85 * sumReveal).toFixed(3);
+    }
+
+    liveWb?.classList.toggle('focus-slide', p >= 0.40 && p < 0.56);
+    liveWb?.classList.toggle('focus-bilingual', p >= 0.56 && p < 0.70);
+    liveWb?.classList.toggle('focus-summary', p >= 0.70);
+
+    let activeStep = 0;
+    if (p >= 0.70) {
+      activeStep = 2;
+      if (stepBadge) stepBadge.textContent = '03 · 逐页总结';
+      if (stepText) stepText.textContent = '讲完一页后，融合 Slide 原文与教授口述沉淀结论';
+    } else if (p >= 0.56) {
+      activeStep = 1;
+      if (stepBadge) stepBadge.textContent = '02 · 实时双语';
+      if (stepText) stepText.textContent = '同屏展示多段中英对照与专有名词批注，每段关联页码';
+    } else {
+      activeStep = 0;
+      if (stepBadge) stepBadge.textContent = '01 · 自动跟页';
+      if (stepText) stepText.textContent = '展开为双栏听课工作台，随教授声音自动切至 Slide P7';
+    }
+    dots.forEach((d, idx) => d?.classList.toggle('is-on', idx === activeStep));
+  }
+
+  function scheduleRender() {
+    if (rafId === null) rafId = requestAnimationFrame(renderScrollTheater);
+  }
+
+  window.addEventListener('scroll', scheduleRender, { passive: true });
+  window.addEventListener('resize', scheduleRender, { passive: true });
+  mqDesktop.addEventListener?.('change', scheduleRender);
+  mqReduced.addEventListener?.('change', scheduleRender);
+
+  // Subtle pointer depth on Cover Polaroids (desktop fine pointer only)
+  const stickyEl = document.getElementById('coverSticky');
+  if (stickyEl && window.matchMedia('(pointer: fine)').matches) {
+    stickyEl.addEventListener('mousemove', (e) => {
+      if (mqReduced.matches || !mqDesktop.matches) return;
+      const r = stickyEl.getBoundingClientRect();
+      mouseNX = (e.clientX - r.left) / r.width - 0.5;
+      mouseNY = (e.clientY - r.top) / r.height - 0.5;
+      scheduleRender();
+    }, { passive: true });
+    stickyEl.addEventListener('mouseleave', () => {
+      mouseNX = 0; mouseNY = 0; scheduleRender();
+    });
+  }
+
+  renderScrollTheater();
+
+  // Calm scroll reveal on lower sections
+  const revealNodes = [...document.querySelectorAll('[data-reveal]')];
+  if (mqReduced.matches || !('IntersectionObserver' in window)) {
+    revealNodes.forEach(n => n.classList.add('is-visible'));
+  } else {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -36px 0px' });
+    revealNodes.forEach(n => io.observe(n));
+  }
+
+  // Lightweight anonymous visit count for author dashboard
+  try {
+    let cid = localStorage.getItem('lecture_scribe_client_id');
+    if (!cid) {
+      cid = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('lecture_scribe_client_id', cid);
+    }
+    fetch('/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': cid },
+      body: JSON.stringify({ event_type: 'page_landing' })
+    }).catch(() => {});
+  } catch (e) {}
+})();
+</script>
+
+</body>
+</html>

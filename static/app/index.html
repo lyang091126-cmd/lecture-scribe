@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="author" content="Blueberry (@lyang091126-cmd)">
+  <meta name="copyright" content="Copyright (c) 2026 Blueberry. All rights reserved.">
+  <meta name="description" content="Anti Lecture 实时双语听翻与 Slide 同步总结工作台">
+  <meta name="theme-color" content="#F5F2EC">
+  <title>Anti Lecture 工作台 · 课件同步双语速记</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <link rel="stylesheet" href="styles.css?v=7.4">
+</head>
+<body>
+  <!-- Quiet, Compact Two-Row Top Chrome -->
+  <div class="top-nav-wrapper" id="topNavWrapper">
+    <header class="app-header">
+      <div class="header-left">
+        <button class="btn-icon" id="btnToggleCourseDrawer" title="展开/收起课程列表边栏" aria-label="展开或收起课程列表" aria-expanded="false">
+          <i data-lucide="panel-left"></i>
+        </button>
+        <a href="/" class="logo" title="返回 Anti Lecture 产品首页">
+          <span class="logo-text">Anti Lecture</span>
+          <span class="logo-dot" aria-hidden="true"></span>
+        </a>
+        <span class="header-sep" aria-hidden="true"></span>
+        <div class="session-title-wrap">
+          <input type="text" id="sessionTitleInput" value="计算机体系结构 Lecture 01" placeholder="输入课程名称..." aria-label="当前课程名称" autocomplete="off" data-lpignore="true">
+          <span class="edit-hint" aria-hidden="true"><i data-lucide="pencil"></i></span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="status-pill" id="statusPill">
+          <span class="status-dot"></span>
+          <span id="statusText">准备就绪</span>
+        </div>
+        <div class="timer-badge" id="timerBadge">
+          <i data-lucide="clock"></i>
+          <span id="timerText">00:00:00</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="dropdown">
+          <button class="btn btn-secondary" id="btnExportMenu">
+            <i data-lucide="download"></i>
+            <span>导出笔记</span>
+            <i data-lucide="chevron-down"></i>
+          </button>
+          <div class="dropdown-menu" id="exportDropdown">
+            <button class="dropdown-item" id="exportDocx">
+              <i data-lucide="file-text"></i>
+              <span>精排 Word 文档 (.docx)</span>
+              <span class="menu-pro-tag">Pro</span>
+            </button>
+            <button class="dropdown-item" id="exportMd">
+              <i data-lucide="file-code"></i>
+              <span>Notion / Obsidian (.md)</span>
+              <span class="menu-pro-tag">Pro</span>
+            </button>
+            <button class="dropdown-item" id="exportSrt">
+              <i data-lucide="subtitles"></i>
+              <span>双语时间轴字幕 (.srt)</span>
+              <span class="menu-pro-tag">Pro</span>
+            </button>
+          </div>
+        </div>
+
+        <button class="btn-account-pill" id="btnAccount" title="登录账号或管理 Free / Pro / Ultra 会员">
+          <i data-lucide="user-circle-2"></i>
+          <span id="accountBtnLabel">登录 / 升级</span>
+          <span class="plan-chip plan-chip--free" id="accountPlanChip">Free</span>
+        </button>
+
+        <button class="btn btn-icon" id="btnSettings" title="模型与翻译设置" aria-label="模型与翻译设置">
+          <i data-lucide="settings"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- API Key Warning Banner -->
+    <div class="api-warning-banner" id="apiWarningBanner">
+      <div class="banner-left">
+        <i data-lucide="alert-triangle"></i>
+        <span id="apiWarningText">提示：API Key 校验未通过，已临时切换至免费翻译引擎保障听课。</span>
+      </div>
+      <button class="btn-banner-fix" id="btnFixApiKey">检查配置</button>
+    </div>
+
+    <!-- Calm Secondary Control Ribbon -->
+    <div class="controls-bar" id="controlsBar">
+      <div class="controls-left">
+        <button class="btn btn-primary" id="btnToggleRecord">
+          <i data-lucide="mic" id="recordIcon"></i>
+          <span id="recordText">开始上课收音</span>
+        </button>
+
+        <input type="file" id="slideFileInput" accept=".pdf,application/pdf" hidden>
+        <button class="btn btn-secondary" id="btnUploadSlide" title="上传教授的 PDF 课件，免费高清浏览并随听课联动">
+          <i data-lucide="file-up"></i>
+          <span id="uploadSlideBtnText">上传 PDF</span>
+        </button>
+
+        <div class="select-group">
+          <label for="audioSourceSelect"><i data-lucide="volume-2"></i><span class="select-label-text">音源</span></label>
+          <select id="audioSourceSelect" aria-label="选择音源">
+            <option value="mic" selected>笔记本麦克风</option>
+            <option value="system">电脑声音内录</option>
+          </select>
+        </div>
+
+        <div class="select-group">
+          <label for="sourceLangSelect"><i data-lucide="languages"></i><span class="select-label-text">语言</span></label>
+          <select id="sourceLangSelect" aria-label="选择讲课语言">
+            <option value="en-US" selected>英语</option>
+            <option value="zh-CN">中文</option>
+            <option value="ja-JP">日语</option>
+            <option value="de-DE">德语</option>
+            <option value="fr-FR">法语</option>
+          </select>
+        </div>
+
+        <div class="audio-monitor" title="实时麦克风收音电平">
+          <span class="monitor-label">电平</span>
+          <canvas id="waveformCanvas" width="84" height="18"></canvas>
+        </div>
+      </div>
+
+      <div class="controls-right">
+        <div class="search-box">
+          <i data-lucide="search"></i>
+          <input type="text" id="searchInput" placeholder="搜索知识点或术语..." aria-label="搜索知识点或术语">
+        </div>
+
+        <button class="btn btn-outline" id="btnSubtitles" title="双语字幕悬浮窗：免费置顶盖在任意软件上方">
+          <i data-lucide="captions"></i>
+          <span>双语字幕</span>
+        </button>
+
+        <button class="btn btn-outline" id="btnGenerateSummary" title="提炼整堂课精要与术语表（Pro / Ultra）">
+          <i data-lucide="sparkles"></i>
+          <span>整课提炼</span>
+        </button>
+
+        <button class="btn btn-ghost" id="btnToggleSlidePane" title="收起或展开课件视图">
+          <i data-lucide="layout-panel-left"></i>
+          <span id="toggleSlidePaneText">收起课件</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Reading Workspace: Collapsible Course Drawer | Unified Slide Folio (63.5%) | Calm Bilingual Pane (36.5%) -->
+  <main class="main-layout" id="mainLayout">
+    <!-- Far-Left Collapsible Course List Drawer -->
+    <aside class="course-drawer" id="courseDrawer" aria-label="课程记录边栏">
+      <div class="course-drawer-head">
+        <span class="course-drawer-title">我的课程</span>
+        <button class="btn-icon-xs" id="btnCloseCourseDrawer" title="收起课程边栏" aria-label="收起课程边栏">
+          <i data-lucide="panel-left-close"></i>
+        </button>
+      </div>
+
+      <div class="course-drawer-action">
+        <button class="btn btn-primary btn-new-course" id="btnClearNotes" title="自动保存当前课程并新建一堂空白课">
+          <i data-lucide="plus"></i>
+          <span>新建课程</span>
+        </button>
+      </div>
+
+      <div class="course-drawer-body">
+        <div class="course-drawer-label" id="courseDrawerScopeLabel">最近 7 天课程（点击随时切回）</div>
+        <div class="course-list" id="courseSidebarList">
+          <span class="placeholder-text">暂无其他历史课程</span>
+        </div>
+      </div>
+
+      <div class="course-drawer-foot">
+        <button type="button" class="plan-pill" id="btnDrawerUpgrade">Free 免费 · Pro ¥4.9 · Ultra ¥8.9</button>
+        <div class="drawer-foot-links">
+          <a href="/" class="watermark-link">返回首页</a>
+          <a href="https://github.com/lyang091126-cmd/lecture-scribe" target="_blank" rel="noopener noreferrer" class="watermark-link">GitHub</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center-Left Primary Stage: Unified Slide Reading Folio -->
+    <section class="slide-stage-pane" id="slideStagePane" aria-label="课件与单页总结区">
+      <div class="slide-viewer-box">
+        <div class="slide-toolbar">
+          <div class="slide-toolbar-left">
+            <span class="slide-file-badge" id="slideFileName">未上传 PDF 课件</span>
+            <span class="slide-page-badge" id="slidePageIndicator">0 / 0</span>
+          </div>
+
+          <div class="slide-toolbar-right">
+            <button class="btn-mini" id="btnAutoFollow" title="根据教授语音自动匹配并切换到对应 Slide 页码（Pro / Ultra）" disabled>
+              <span class="follow-dot" aria-hidden="true"></span>
+              <span id="autoFollowText">自动跟页</span>
+            </button>
+            <div class="slide-nav-group">
+              <button class="btn-icon-xs" id="btnSlidePrev" title="上一页 Slide" aria-label="上一页" disabled>
+                <i data-lucide="chevron-left"></i>
+              </button>
+              <button class="btn-icon-xs" id="btnSlideNext" title="下一页 Slide" aria-label="下一页" disabled>
+                <i data-lucide="chevron-right"></i>
+              </button>
+            </div>
+            <div class="slide-nav-group">
+              <button class="btn-icon-xs" id="btnZoomOut" title="缩小" aria-label="缩小" disabled>
+                <i data-lucide="minus"></i>
+              </button>
+              <button class="btn-mini-plain" id="btnZoomFit" title="适应窗口" disabled>适应</button>
+              <button class="btn-icon-xs" id="btnZoomIn" title="放大" aria-label="放大" disabled>
+                <i data-lucide="plus"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Archival Warm Desk Canvas Stage -->
+        <div class="slide-canvas-stage" id="slideCanvasStage">
+          <div class="slide-dropzone" id="slideDropzone" tabindex="0" role="button" aria-label="点击或拖入教授的 PDF 课件">
+            <div class="dropzone-icon"><i data-lucide="file-text"></i></div>
+            <h3>拖入或点击上传教授的 PDF 课件</h3>
+            <p>原封不动高清展示每页 Slide（公式与图表零走样）。上传后即可预览本节教学目标与首页总结，升级 Pro / Ultra 解锁全课件跟页与逐页总结。</p>
+            <div class="dropzone-actions">
+              <button type="button" class="btn btn-primary" id="btnDropzoneUpload">
+                <i data-lucide="upload"></i>
+                <span>选择 PDF 文件</span>
+              </button>
+              <button type="button" class="btn btn-ghost" id="btnHideSlidesFromEmpty">暂不上传，直接听翻</button>
+            </div>
+            <div class="dropzone-hint">仅支持 PDF 格式（PPTX 可在 PowerPoint / WPS 中 2 秒另存为 PDF）；文件只在浏览器本地渲染，不上传服务器。</div>
+          </div>
+
+          <div class="slide-canvas-wrap" id="slideCanvasWrap" hidden>
+            <canvas id="slideCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Compact Page Index Strip -->
+        <div class="slide-strip" id="slideStrip" hidden aria-label="Slide 页码快捷跳转"></div>
+      </div>
+
+      <!-- Tightly Bound Current-Slide Synthesis Bar -->
+      <div class="current-slide-summary" id="currentSlideSummaryBox">
+        <div class="current-slide-summary-head">
+          <div class="summary-head-left">
+            <span class="current-page-pill" id="currentSlidePagePill">P-</span>
+            <span class="summary-head-title" id="currentSlideSumTitle">当前页 · Slide + 教授口述综合总结</span>
+            <span class="spoken-count-pill" id="currentSlideSpokenCount">等待上传课件</span>
+          </div>
+          <button class="btn-mini-plain" id="btnSummarizeCurrentSlide" title="立即将当前页 Slide 与口述内容合成总结" disabled>
+            <i data-lucide="sparkles"></i>
+            <span>总结本页</span>
+          </button>
+        </div>
+        <div class="current-slide-summary-body" id="currentSlideSummaryBody">
+          <div class="sum-placeholder">
+            上传 PDF 课件并开始收音后，每讲完一页自动在这里沉淀「该页 Slide + 教授口述补充」的简短结论；第 1 页免费预览，第 2 页起升级 Pro / Ultra 完整解锁。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Reading Pane (Narrowed 36.5%): Live Bilingual | Overview & Per-Page | Glossary -->
+    <aside class="right-workspace-pane" id="rightWorkspacePane" aria-label="双语听翻与智能总结区">
+      <div class="right-tabs-bar" role="tablist">
+        <button type="button" class="right-tab active" id="tabBtnLive" role="tab" aria-selected="true" data-tab="live">
+          <span>实时双语</span>
+          <span class="tab-badge" id="tabLiveCount">0</span>
+        </button>
+        <button type="button" class="right-tab" id="tabBtnSlides" role="tab" aria-selected="false" data-tab="slides">
+          <span>总览与逐页</span>
+          <span class="tab-badge" id="tabSlidesCount">0</span>
+        </button>
+        <button type="button" class="right-tab" id="tabBtnGlossary" role="tab" aria-selected="false" data-tab="glossary">
+          <span>术语板书</span>
+          <span class="tab-badge" id="tabGlossaryCount">0</span>
+        </button>
+      </div>
+
+      <!-- Tab 1: Live Bilingual Stream -->
+      <div class="right-tab-panel active" id="tabPanelLive" role="tabpanel">
+        <div class="live-subbar">
+          <div class="live-filter-pills">
+            <button type="button" class="pill-btn active" id="btnFilterAllCards">全部</button>
+            <button type="button" class="pill-btn" id="btnFilterCurrentSlide" disabled>仅看当前页</button>
+          </div>
+          <span class="live-subbar-hint" id="liveSubbarHint">实时免费直连</span>
+        </div>
+
+        <div class="cards-container" id="cardsContainer">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon"><i data-lucide="mic"></i></div>
+            <h2>准备开始课堂双语速记</h2>
+            <p class="empty-lead">点左上角「开始上课收音」即可免费实时双语听翻；点最左侧边栏图标可随时切换历史课程或新建课程。</p>
+            <ul class="empty-steps">
+              <li><strong>免费听翻：</strong>实时语音双语翻译、悬浮置顶字幕与 PDF 原版浏览永久免费。</li>
+              <li><strong>首屏预览：</strong>上传 PDF 即可免费预览本节教学目标与第 1 页综合总结。</li>
+              <li><strong>会员升级：</strong>Pro（¥4.9/月自带 Key）与 Ultra（¥8.9/月含官方额度）解锁全套深度总结与导出。</li>
+            </ul>
+          </div>
+          <div class="cards-list" id="cardsList"></div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Pre-Class Slide Overview + Per-Page Synthesis Timeline -->
+      <div class="right-tab-panel" id="tabPanelSlides" role="tabpanel">
+        <div class="panel-scroll">
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <h3><i data-lucide="book-open"></i> 本节 Slide 课前总览</h3>
+              <button type="button" class="btn-mini-plain" id="btnRefreshSlideOverview" disabled>重新生成</button>
+            </div>
+            <div class="slide-overview-body" id="slideOverviewBody">
+              <p class="placeholder-text">上传教授的 PDF 课件后，自动整理本节课的「教学目标」（免费预览）以及「主要内容脉络」与「核心术语预告」（Pro / Ultra 解锁）。</p>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <h3><i data-lucide="layers"></i> 逐页 Slide + 口述总结</h3>
+              <span class="panel-meta-text" id="timelineSummaryMeta">0 页已总结</span>
+            </div>
+            <div class="slide-timeline-list" id="slideTimelineList">
+              <p class="placeholder-text">每讲完一张 Slide（翻页自动触发或手动点「总结本页」），综合结论会按页码顺序沉淀在这里。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Glossary & Full-Lecture Summary -->
+      <div class="right-tab-panel" id="tabPanelGlossary" role="tabpanel">
+        <div class="panel-scroll" id="blackboardSidebar">
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <h3><i data-lucide="book-marked"></i> 专有名词术语表</h3>
+              <button class="btn-mini-plain" id="btnRefreshSummary" title="调用 AI 深度提炼整堂课板书与术语">
+                <i data-lucide="refresh-cw"></i> 整课提炼
+              </button>
+            </div>
+            <div class="glossary-list" id="glossaryList">
+              <div class="glossary-empty">
+                <p class="placeholder-text">暂未收录专有名词，听课过程中自动提取算法、法规、系统架构等核心术语并附通俗解释。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <h3><i data-lucide="align-left"></i> 整堂课核心概览</h3>
+            </div>
+            <p class="summary-overview" id="summaryOverview">尚未生成整课概览（点击上方「整课提炼」生成）</p>
+            <ul class="takeaways-list" id="takeawaysList">
+              <li class="placeholder-text">等待提炼核心要点...</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Serene Warm-Paper Docked Active Listening Bar (Replaces harsh black dock) -->
+      <div class="active-dock" id="activeDock">
+        <div class="active-dock-inner">
+          <div class="dock-badge" id="dockBadge">
+            <span class="pulse-ring"></span>
+            <span id="dockStateLabel">待机中</span>
+          </div>
+          <div class="active-text-wrapper">
+            <span class="active-source-text" id="activeSourceText">等待声音输入中...</span>
+            <span class="active-cursor" aria-hidden="true">|</span>
+          </div>
+          <div class="dock-actions">
+            <button class="btn-sm btn-dock" id="btnForceFlush" title="立刻将当前句子封存为一张卡片">
+              <i data-lucide="corner-down-left"></i>
+              <span>分段</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Account & Membership Modal (Free / Pro ¥4.9 / Ultra ¥8.9 + Username/Password Auth + Activation Code) -->
+  <div class="modal-backdrop" id="accountModal">
+    <div class="modal-card modal-card--wide" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
+      <div class="modal-header">
+        <div class="modal-title" id="accountModalTitle">
+          <i data-lucide="crown"></i>
+          <span>账号与会员方案</span>
+        </div>
+        <button class="btn-icon" id="btnCloseAccount" aria-label="关闭窗口"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Signed-in Summary Bar -->
+        <div class="account-status-banner" id="accountSignedInBox" hidden>
+          <div class="account-user-row">
+            <div>
+              <div class="account-username-line">
+                <strong id="acctUsernameDisplay">—</strong>
+                <span class="plan-chip plan-chip--free" id="acctPlanBadge">Free</span>
+              </div>
+              <div class="account-expiry-text" id="acctExpiryText">当前为免费版，可随时输入激活码升级 Pro 或 Ultra。</div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm-h" id="btnLogout">退出登录</button>
+          </div>
+
+          <!-- Ultra Monthly Quota Meters (Shown for Ultra members) -->
+          <div class="ultra-quota-box" id="ultraQuotaBox" hidden>
+            <div class="quota-title">本月 Ultra 官方内置额度</div>
+            <div class="quota-grid">
+              <div class="quota-cell">
+                <span>课件总览</span>
+                <strong id="qOverviewText">0 / 40</strong>
+              </div>
+              <div class="quota-cell">
+                <span>逐页总结</span>
+                <strong id="qSlideText">0 / 1200</strong>
+              </div>
+              <div class="quota-cell">
+                <span>助教与提炼</span>
+                <strong id="qQaText">0 / 300</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guest Auth Form (Username + Password only, NO email/phone verification) -->
+        <div class="auth-panel" id="authGuestBox">
+          <div class="auth-mode-tabs">
+            <button type="button" class="auth-tab active" id="authTabLogin">账号登录</button>
+            <button type="button" class="auth-tab" id="authTabRegister">5 秒快速注册</button>
+          </div>
+
+          <form id="authForm" class="auth-form" autocomplete="off">
+            <div class="auth-fields-row">
+              <div class="form-group">
+                <label for="authUsername">用户名（无需邮箱或手机号）</label>
+                <input type="text" id="authUsername" name="al_login_user" placeholder="2~24 位中英文、数字或下划线" required minlength="2" maxlength="24" autocomplete="off" data-lpignore="true" spellcheck="false">
+              </div>
+              <div class="form-group">
+                <label for="authPassword">密码（至少 6 位）</label>
+                <input type="password" id="authPassword" name="al_login_pass" placeholder="请牢记密码" required minlength="6" maxlength="128" autocomplete="new-password" data-lpignore="true">
+              </div>
+            </div>
+            <div class="auth-submit-row">
+              <span class="form-help" id="authHintText">登录后历史课程将同步绑定到你的账号，并可随时激活 Pro / Ultra。</span>
+              <button type="submit" class="btn btn-primary" id="btnAuthSubmit">登录账号</button>
+            </div>
+            <div class="auth-error-msg" id="authErrorMsg" hidden></div>
+          </form>
+        </div>
+
+        <!-- Payment Path: WeChat Pay + Alipay QR Codes (Instant 48h Access + Author Review) -->
+        <div class="pay-qr-panel">
+          <div class="pay-qr-top">
+            <div>
+              <div class="pay-qr-title">扫码付款即享（无需私聊等待）</div>
+              <div class="pay-qr-note" id="payRemarkHint">扫码付完款后在下方填账单后 4 位，点一下即可先享 48 小时，作者核对到账后自动转正为 30 天。</div>
+            </div>
+            <div class="pay-plan-switch" id="payPlanSwitch">
+              <button type="button" class="pay-plan-btn active" data-pay-plan="pro">Pro · ¥4.9/月</button>
+              <button type="button" class="pay-plan-btn" data-pay-plan="ultra">Ultra · ¥8.9/月</button>
+            </div>
+          </div>
+
+          <div class="pay-qr-grid">
+            <div class="pay-qr-card pay-qr-card--wx">
+              <div class="pay-qr-badge"><span class="pay-dot pay-dot--wx"></span>微信支付 · <strong class="pay-amt-text">¥4.9</strong></div>
+              <img src="pay/wechat_pay.jpg" alt="微信收款码" loading="lazy">
+            </div>
+            <div class="pay-qr-card pay-qr-card--ali">
+              <div class="pay-qr-badge"><span class="pay-dot pay-dot--ali"></span>支付宝 · <strong class="pay-amt-text">¥4.9</strong></div>
+              <img src="pay/alipay.jpg" alt="支付宝收款码" loading="lazy">
+            </div>
+          </div>
+
+          <div class="pay-claim-box">
+            <div class="pay-claim-row">
+              <div class="pay-method-pills" id="payMethodSwitch">
+                <button type="button" class="pay-method-btn active" data-pay-method="wechat">微信</button>
+                <button type="button" class="pay-method-btn" data-pay-method="alipay">支付宝</button>
+              </div>
+              <input type="text" id="payReceiptInput" placeholder="填账单后 4 位或付款时间（如 8842 / 20:15）" maxlength="80">
+              <button type="button" class="btn btn-primary" id="btnSubmitPayClaim">我已付款，立即先享</button>
+            </div>
+            <div class="pay-claim-status" id="payClaimMsg">提交后立即解锁 48 小时全部功能，作者确认到账后自动延续为完整 30 天。</div>
+          </div>
+        </div>
+
+        <!-- Activation / Redemption Code Box -->
+        <div class="redeem-box">
+          <label for="redeemCodeInput">已有 Pro / Ultra 激活码？直接兑换</label>
+          <div class="redeem-row">
+            <input type="text" id="redeemCodeInput" placeholder="例如 LSPRO-XXXX-XXXX 或 LSULT-XXXX-XXXX">
+            <button type="button" class="btn btn-secondary" id="btnRedeemCode">立即激活</button>
+          </div>
+          <div class="form-help" id="redeemMsg">输入 12 位月卡激活码后立即生效（30 天）；所有功能毛玻璃锁将实时解除。</div>
+        </div>
+
+        <!-- Clear 3-Tier Plan Comparison -->
+        <div class="modal-plans-grid">
+          <div class="mini-plan">
+            <div class="mini-plan-head">
+              <strong>Free</strong>
+              <span>¥0 / 月</span>
+            </div>
+            <ul>
+              <li>实时语音双语翻译与悬浮字幕</li>
+              <li>原版 PDF 浏览与课程侧边栏</li>
+              <li>教学目标预览 + 第 1 页总结预览</li>
+            </ul>
+          </div>
+          <div class="mini-plan mini-plan--pro">
+            <div class="mini-plan-head">
+              <strong>Pro · 自带 Key</strong>
+              <span>¥4.9 / 月</span>
+            </div>
+            <ul>
+              <li>解锁全课件总览、自动跟页与逐页总结</li>
+              <li>无限次问问助教 + 三格式完整导出</li>
+              <li>填入自己的 API Key 不限调用次数</li>
+            </ul>
+          </div>
+          <div class="mini-plan mini-plan--ultra">
+            <div class="mini-plan-head">
+              <strong>Ultra · 官方额度</strong>
+              <span>¥8.9 / 月</span>
+            </div>
+            <ul>
+              <li>包含 Pro 全部功能，免填 API Key</li>
+              <li>含月度官方高速模型内置额度</li>
+              <li>额度用完后仍可无缝切回自带 Key</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upgraded Settings Modal (Auto Default Model + Free Input Datalist + Quick Presets + Opt-in LLM Live Translate) -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+      <div class="modal-header">
+        <div class="modal-title" id="settingsModalTitle">
+          <i data-lucide="sliders"></i>
+          <span>模型与翻译设置</span>
+        </div>
+        <button class="btn-icon" id="btnCloseSettings" aria-label="关闭设置"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label>快捷选择服务商（点一下自动填充接口地址）</label>
+          <div class="provider-presets" id="providerPresets">
+            <button type="button" class="preset-chip" data-preset="gemini">Google Gemini</button>
+            <button type="button" class="preset-chip" data-preset="deepseek">DeepSeek</button>
+            <button type="button" class="preset-chip" data-preset="openai">OpenAI</button>
+            <button type="button" class="preset-chip" data-preset="siliconflow">硅基流动</button>
+            <button type="button" class="preset-chip" data-preset="qwen">通义千问</button>
+            <button type="button" class="preset-chip" data-preset="openrouter">OpenRouter</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="cfgProvider">接口协议</label>
+          <select id="cfgProvider">
+            <option value="gemini" selected>Google Gemini API（自动识别 AIza... 开头 Key）</option>
+            <option value="openai_compatible">OpenAI 兼容协议（DeepSeek / 硅基流动 / 通义 / OpenRouter 等）</option>
+            <option value="free_google">仅使用免 Key 免费模式（浏览器直连翻译 + 本地规则摘要）</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="groupApiKey">
+          <label for="cfgApiKey">个人 API Key（仅保存在当前浏览器本地）</label>
+          <input type="password" id="cfgApiKey" name="al_api_key_local" placeholder="粘贴 API Key（如 AIzaSy... 或 sk-...），Ultra 会员可留空" autocomplete="new-password" data-lpignore="true" spellcheck="false">
+          <div class="form-help">
+            只贴 API Key、不选模型也能直接调用默认模型。Ultra 会员留空即可自动使用官方内置额度。
+          </div>
+        </div>
+
+        <div class="form-group" id="groupCustomEndpoint" style="display:none;">
+          <label for="cfgCustomEndpoint">接口 Base URL（兼容协议必填）</label>
+          <input type="text" id="cfgCustomEndpoint" placeholder="例如 https://api.deepseek.com/v1">
+        </div>
+
+        <div class="form-group" id="groupModelName">
+          <label for="cfgModelName">模型名称（可下拉选、可手打任意新模型，留空则自动用默认模型）</label>
+          <input type="text" id="cfgModelName" list="modelPresetsList" placeholder="留空自动使用当前服务商默认模型（推荐）" autocomplete="off">
+          <datalist id="modelPresetsList">
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite（极速超省）</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash（均衡推荐）</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro（深度推理）</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash（稳定备用）</option>
+            <option value="deepseek-chat">DeepSeek Chat（高性价比）</option>
+            <option value="deepseek-reasoner">DeepSeek Reasoner</option>
+            <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
+            <option value="gpt-4.1-mini">OpenAI GPT-4.1-mini</option>
+            <option value="qwen-plus">通义千问 qwen-plus</option>
+            <option value="Qwen/Qwen2.5-72B-Instruct">硅基流动 Qwen2.5-72B</option>
+            <option value="google/gemini-2.5-flash">OpenRouter Gemini 2.5 Flash</option>
+            <option value="anthropic/claude-sonnet-4">OpenRouter Claude Sonnet 4</option>
+          </datalist>
+        </div>
+
+        <div class="form-group">
+          <label class="toggle-line" for="cfgUseLlmLiveTranslate">
+            <span>
+              <strong>实时翻译也使用我的 API Key</strong>
+              <small>默认关闭（走 0.3s 免费高速直连，最省额度）；开启后每段实时口述都经个人 Key 学术精译与去口头禅。</small>
+            </span>
+            <input type="checkbox" id="cfgUseLlmLiveTranslate">
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="cfgPauseThreshold">分段停顿阈值（意群聚合灵敏度）</label>
+          <div class="range-wrap">
+            <input type="range" id="cfgPauseThreshold" min="1.0" max="3.5" step="0.2" value="1.4">
+            <span id="valPauseThreshold">1.4 秒</span>
+          </div>
+          <div class="form-help">讲师停顿超过该时长且语义相对完整时，自动封存为一张双语知识卡片。</div>
+        </div>
+
+        <div class="about-copyright-box">
+          <div class="about-header">关于 Anti Lecture</div>
+          <p>Free 实时翻译免费；Pro（¥4.9/月自带 Key）与 Ultra（¥8.9/月含官方额度）解锁全课件跟页、逐页总结与导出。由 <strong>Blueberry (@lyang091126-cmd)</strong> 原创设计与维护。</p>
+          <div class="about-repo">
+            <span>源码仓库：</span>
+            <a href="https://github.com/lyang091126-cmd/lecture-scribe" target="_blank" rel="noopener noreferrer">github.com/lyang091126-cmd/lecture-scribe</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btnCancelSettings">取消</button>
+        <button class="btn btn-primary" id="btnSaveSettings">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=7.4"></script>
+</body>
+</html>
