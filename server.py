@@ -2144,9 +2144,7 @@ async def billing_claim(req: PaymentClaimRequest, request: Request, _rl=Depends(
     user = await get_optional_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="请先注册或登录账号后再提交付款申请")
-    note = (req.receipt_note or "").strip()
-    if len(note) < 2:
-        raise HTTPException(status_code=400, detail="请填写微信/支付宝账单后 4 位或付款时间，方便核对")
+    note = (req.receipt_note or "").strip() or f"已备注用户名：{user['username']}"
     try:
         claim, updated_user, temp_granted = await db.submit_payment_claim(
             user["id"], req.plan, req.pay_method, note

@@ -3583,7 +3583,7 @@ function updateAccountUI() {
     if (el.accountSignedInBox) el.accountSignedInBox.hidden = false;
     if (el.authGuestBox) el.authGuestBox.hidden = true;
     if (el.payRemarkHint) {
-      el.payRemarkHint.innerHTML = `付款时请备注你的用户名：<strong>${escapeHtml(user.username)}</strong>，付完在下方填账单后 4 位即可立即先享 48 小时。`;
+      el.payRemarkHint.innerHTML = `扫码付款时请在「添加备注」填你的用户名：<strong>${escapeHtml(user.username)}</strong>，付完直接点下方按钮即可先享 48 小时。`;
     }
     if (el.acctUsernameDisplay) el.acctUsernameDisplay.textContent = user.username;
     if (el.acctPlanBadge) {
@@ -3611,7 +3611,7 @@ function updateAccountUI() {
     if (el.authGuestBox) el.authGuestBox.hidden = false;
     if (el.ultraQuotaBox) el.ultraQuotaBox.hidden = true;
     if (el.payRemarkHint) {
-      el.payRemarkHint.textContent = '先在上方登录或 5 秒注册，扫码付款后填账单后 4 位，即可免等待先享 48 小时会员。';
+      el.payRemarkHint.textContent = '先在上方登录或 5 秒注册，扫码付款时在「添加备注」填用户名，付完直接点下方按钮即可先享 48 小时。';
     }
   }
 
@@ -3755,17 +3755,39 @@ function setupAccountListeners() {
   el.btnRedeemCode?.addEventListener('click', handleRedeemCode);
   el.btnLogout?.addEventListener('click', handleLogout);
 
-  // Payment plan & method switcher + instant-access claim submission
+  // Payment plan & method switcher + clickable bottom plan cards + instant-access claim submission
   let selectedPayPlan = 'pro';
   let selectedPayMethod = 'wechat';
+
+  const applyPayPlanSelection = (plan) => {
+    selectedPayPlan = plan === 'ultra' ? 'ultra' : 'pro';
+    const amtText = selectedPayPlan === 'ultra' ? '¥8.9' : '¥4.9';
+    el.payPlanSwitch?.querySelectorAll('.pay-plan-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.payPlan === selectedPayPlan);
+    });
+    document.querySelectorAll('.pay-amt-text').forEach(n => { n.textContent = amtText; });
+    document.querySelectorAll('[data-select-plan]').forEach(card => {
+      card.classList.toggle('is-selected', card.dataset.selectPlan === selectedPayPlan);
+    });
+  };
 
   el.payPlanSwitch?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-pay-plan]');
     if (!btn) return;
-    selectedPayPlan = btn.dataset.payPlan === 'ultra' ? 'ultra' : 'pro';
-    const amtText = selectedPayPlan === 'ultra' ? '¥8.9' : '¥4.9';
-    el.payPlanSwitch.querySelectorAll('.pay-plan-btn').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.pay-amt-text').forEach(n => { n.textContent = amtText; });
+    applyPayPlanSelection(btn.dataset.payPlan);
+  });
+
+  document.getElementById('modalPlansGrid')?.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-select-plan]');
+    if (!card) return;
+    applyPayPlanSelection(card.dataset.selectPlan);
+  });
+  document.getElementById('modalPlansGrid')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('[data-select-plan]');
+    if (!card) return;
+    e.preventDefault();
+    applyPayPlanSelection(card.dataset.selectPlan);
   });
 
   el.payMethodSwitch?.addEventListener('click', (e) => {
@@ -3786,12 +3808,8 @@ function setupAccountListeners() {
       el.authUsername?.focus();
       return;
     }
-    const note = (el.payReceiptInput?.value || '').trim();
-    if (note.length < 2) {
-      setStatus('请填写微信/支付宝账单后 4 位或付款时间（如 8842），方便核对到账。', 'is-err');
-      el.payReceiptInput?.focus();
-      return;
-    }
+    const rawNote = (el.payReceiptInput?.value || '').trim();
+    const note = rawNote || `已备注用户名：${state.auth.user.username}`;
     el.btnSubmitPayClaim.disabled = true;
     try {
       const res = await fetch('/api/billing/claim', {

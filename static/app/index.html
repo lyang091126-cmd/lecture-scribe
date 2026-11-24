@@ -14,7 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <link rel="stylesheet" href="styles.css?v=7.4">
+  <link rel="stylesheet" href="styles.css?v=7.5">
 </head>
 <body>
   <!-- Quiet, Compact Two-Row Top Chrome -->
@@ -464,7 +464,7 @@
           <div class="pay-qr-top">
             <div>
               <div class="pay-qr-title">扫码付款即享（无需私聊等待）</div>
-              <div class="pay-qr-note" id="payRemarkHint">扫码付完款后在下方填账单后 4 位，点一下即可先享 48 小时，作者核对到账后自动转正为 30 天。</div>
+              <div class="pay-qr-note" id="payRemarkHint">扫码付款时请在微信/支付宝「添加备注」里填写你的用户名，付完直接点下方按钮即可先享 48 小时。</div>
             </div>
             <div class="pay-plan-switch" id="payPlanSwitch">
               <button type="button" class="pay-plan-btn active" data-pay-plan="pro">Pro · ¥4.9/月</button>
@@ -489,10 +489,10 @@
                 <button type="button" class="pay-method-btn active" data-pay-method="wechat">微信</button>
                 <button type="button" class="pay-method-btn" data-pay-method="alipay">支付宝</button>
               </div>
-              <input type="text" id="payReceiptInput" placeholder="填账单后 4 位或付款时间（如 8842 / 20:15）" maxlength="80">
+              <input type="text" id="payReceiptInput" placeholder="已备注用户名可留空；忘写备注请填微信/支付宝昵称或付款时间" maxlength="80">
               <button type="button" class="btn btn-primary" id="btnSubmitPayClaim">我已付款，立即先享</button>
             </div>
-            <div class="pay-claim-status" id="payClaimMsg">提交后立即解锁 48 小时全部功能，作者确认到账后自动延续为完整 30 天。</div>
+            <div class="pay-claim-status" id="payClaimMsg">在付款备注填好用户名即可直接点「我已付款，立即先享」解锁 48 小时；作者核对到账后自动转正为完整 30 天。</div>
           </div>
         </div>
 
@@ -506,12 +506,11 @@
           <div class="form-help" id="redeemMsg">输入 12 位月卡激活码后立即生效（30 天）；所有功能毛玻璃锁将实时解除。</div>
         </div>
 
-        <!-- Clear 3-Tier Plan Comparison -->
-        <div class="modal-plans-grid">
+        <!-- Clear 3-Tier Plan Comparison (Pro & Ultra clickable and synced with QR plan switch) -->
+        <div class="modal-plans-grid" id="modalPlansGrid">
           <div class="mini-plan">
             <div class="mini-plan-head">
               <strong>Free</strong>
-              <span>¥0 / 月</span>
             </div>
             <ul>
               <li>实时语音双语翻译与悬浮字幕</li>
@@ -519,7 +518,7 @@
               <li>教学目标预览 + 第 1 页总结预览</li>
             </ul>
           </div>
-          <div class="mini-plan mini-plan--pro">
+          <div class="mini-plan mini-plan--selectable mini-plan--pro is-selected" data-select-plan="pro" role="button" tabindex="0">
             <div class="mini-plan-head">
               <strong>Pro · 自带 Key</strong>
               <span>¥4.9 / 月</span>
@@ -530,7 +529,7 @@
               <li>填入自己的 API Key 不限调用次数</li>
             </ul>
           </div>
-          <div class="mini-plan mini-plan--ultra">
+          <div class="mini-plan mini-plan--selectable mini-plan--ultra" data-select-plan="ultra" role="button" tabindex="0">
             <div class="mini-plan-head">
               <strong>Ultra · 官方额度</strong>
               <span>¥8.9 / 月</span>
@@ -647,6 +646,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=7.4"></script>
+  <script src="app.js?v=7.5"></script>
 </body>
 </html>
