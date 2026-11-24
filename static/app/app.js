@@ -2776,9 +2776,14 @@ function updateTabBadges() {
 function setSlidesPaneHidden(hidden) {
   slideState.slidesPaneHidden = hidden;
   el.mainLayout?.classList.toggle('slides-hidden', hidden);
-  if (el.toggleSlidePaneText) {
-    el.toggleSlidePaneText.textContent = hidden ? '展开课件' : '收起课件';
+  const label = hidden ? '展开课件' : '收起课件';
+  if (el.btnToggleSlidePane) {
+    el.btnToggleSlidePane.title = label;
+    el.btnToggleSlidePane.setAttribute('aria-label', label);
+    el.btnToggleSlidePane.setAttribute('aria-expanded', String(!hidden));
   }
+  const chev = document.getElementById('toggleSlidePaneChevron');
+  if (chev) chev.textContent = hidden ? '›' : '‹';
 }
 
 function resetSlideViewer() {
@@ -3583,7 +3588,7 @@ function updateAccountUI() {
     if (el.accountSignedInBox) el.accountSignedInBox.hidden = false;
     if (el.authGuestBox) el.authGuestBox.hidden = true;
     if (el.payRemarkHint) {
-      el.payRemarkHint.innerHTML = `扫码付款时请在「添加备注」填你的用户名：<strong>${escapeHtml(user.username)}</strong>，付完直接点下方按钮即可先享 48 小时。`;
+      el.payRemarkHint.innerHTML = `扫码付款时请在「添加备注」填写你的用户名：<strong>${escapeHtml(user.username)}</strong>，付款后点击下方按钮即可开通。`;
     }
     if (el.acctUsernameDisplay) el.acctUsernameDisplay.textContent = user.username;
     if (el.acctPlanBadge) {
@@ -3595,7 +3600,7 @@ function updateAccountUI() {
         const expDate = user.plan_expires_at ? new Date(user.plan_expires_at * 1000).toLocaleDateString() : '长期';
         el.acctExpiryText.textContent = `当前为 ${planLabel} 会员（有效期至 ${expDate}），全套课件跟页、逐页总结与导出已解锁。`;
       } else {
-        el.acctExpiryText.textContent = '当前为 Free 免费版；可在下方扫码付款立即先享 48 小时，或输入 Pro / Ultra 激活码升级。';
+        el.acctExpiryText.textContent = '当前为 Free 免费版；可在下方选择 Pro 或 Ultra 扫码开通，或输入激活码升级。';
       }
     }
     if (el.ultraQuotaBox) {
@@ -3611,7 +3616,7 @@ function updateAccountUI() {
     if (el.authGuestBox) el.authGuestBox.hidden = false;
     if (el.ultraQuotaBox) el.ultraQuotaBox.hidden = true;
     if (el.payRemarkHint) {
-      el.payRemarkHint.textContent = '先在上方登录或 5 秒注册，扫码付款时在「添加备注」填用户名，付完直接点下方按钮即可先享 48 小时。';
+      el.payRemarkHint.textContent = '先在上方登录或 5 秒注册，扫码付款时在「添加备注」填用户名，付款后点击下方按钮即可开通。';
     }
   }
 
@@ -3755,27 +3760,21 @@ function setupAccountListeners() {
   el.btnRedeemCode?.addEventListener('click', handleRedeemCode);
   el.btnLogout?.addEventListener('click', handleLogout);
 
-  // Payment plan & method switcher + clickable bottom plan cards + instant-access claim submission
+  // Payment plan selection via clickable cards + payment method switcher + claim submission
   let selectedPayPlan = 'pro';
   let selectedPayMethod = 'wechat';
 
   const applyPayPlanSelection = (plan) => {
     selectedPayPlan = plan === 'ultra' ? 'ultra' : 'pro';
     const amtText = selectedPayPlan === 'ultra' ? '¥8.9' : '¥4.9';
-    el.payPlanSwitch?.querySelectorAll('.pay-plan-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.payPlan === selectedPayPlan);
-    });
+    const tagText = selectedPayPlan === 'ultra' ? 'Ultra · ¥8.9/月' : 'Pro · ¥4.9/月';
+    const tagEl = document.getElementById('paySelectedTag');
+    if (tagEl) tagEl.textContent = tagText;
     document.querySelectorAll('.pay-amt-text').forEach(n => { n.textContent = amtText; });
     document.querySelectorAll('[data-select-plan]').forEach(card => {
       card.classList.toggle('is-selected', card.dataset.selectPlan === selectedPayPlan);
     });
   };
-
-  el.payPlanSwitch?.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-pay-plan]');
-    if (!btn) return;
-    applyPayPlanSelection(btn.dataset.payPlan);
-  });
 
   document.getElementById('modalPlansGrid')?.addEventListener('click', (e) => {
     const card = e.target.closest('[data-select-plan]');
@@ -3804,7 +3803,7 @@ function setupAccountListeners() {
       el.payClaimMsg.className = 'pay-claim-status' + (cls ? ' ' + cls : '');
     };
     if (!state.auth.user) {
-      setStatus('请先在上方登录或 5 秒注册账号，再点「我已付款，立即先享」。', 'is-err');
+      setStatus('请先在上方登录或 5 秒注册账号，再点「我已完成付款」。', 'is-err');
       el.authUsername?.focus();
       return;
     }
@@ -3832,9 +3831,9 @@ function setupAccountListeners() {
       }
       state.auth.user = data.user;
       if (el.payReceiptInput) el.payReceiptInput.value = '';
-      setStatus('✓ ' + (data.message || '已开通 48 小时先享体验！'), 'is-ok');
+      setStatus('✓ ' + (data.message || '已收到付款确认，会员权限已开启！'), 'is-ok');
       updateAccountUI();
-      showToast(data.message || '已立即解锁 48 小时体验！');
+      showToast(data.message || '会员权限已开启！');
     } catch (err) {
       setStatus('网络请求失败，请稍后重试', 'is-err');
     } finally {

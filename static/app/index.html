@@ -14,7 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <link rel="stylesheet" href="styles.css?v=7.5">
+  <link rel="stylesheet" href="styles.css?v=7.6">
 </head>
 <body>
   <!-- Quiet, Compact Two-Row Top Chrome -->
@@ -147,11 +147,6 @@
           <i data-lucide="sparkles"></i>
           <span>整课提炼</span>
         </button>
-
-        <button class="btn btn-ghost" id="btnToggleSlidePane" title="收起或展开课件视图">
-          <i data-lucide="layout-panel-left"></i>
-          <span id="toggleSlidePaneText">收起课件</span>
-        </button>
       </div>
     </div>
   </div>
@@ -269,6 +264,13 @@
         </div>
       </div>
     </section>
+
+    <!-- Subtle Vertical Seam Handle to Collapse / Expand Slide Pane -->
+    <div class="pane-divider-seam">
+      <button type="button" class="pane-divider-toggle" id="btnToggleSlidePane" title="收起课件" aria-label="收起课件" aria-expanded="true">
+        <span class="pane-divider-chevron" id="toggleSlidePaneChevron" aria-hidden="true">‹</span>
+      </button>
+    </div>
 
     <!-- Right Reading Pane (Narrowed 36.5%): Live Bilingual | Overview & Per-Page | Glossary -->
     <aside class="right-workspace-pane" id="rightWorkspacePane" aria-label="双语听翻与智能总结区">
@@ -459,54 +461,7 @@
           </form>
         </div>
 
-        <!-- Payment Path: WeChat Pay + Alipay QR Codes (Instant 48h Access + Author Review) -->
-        <div class="pay-qr-panel">
-          <div class="pay-qr-top">
-            <div>
-              <div class="pay-qr-title">扫码付款即享（无需私聊等待）</div>
-              <div class="pay-qr-note" id="payRemarkHint">扫码付款时请在微信/支付宝「添加备注」里填写你的用户名，付完直接点下方按钮即可先享 48 小时。</div>
-            </div>
-            <div class="pay-plan-switch" id="payPlanSwitch">
-              <button type="button" class="pay-plan-btn active" data-pay-plan="pro">Pro · ¥4.9/月</button>
-              <button type="button" class="pay-plan-btn" data-pay-plan="ultra">Ultra · ¥8.9/月</button>
-            </div>
-          </div>
-
-          <div class="pay-qr-grid">
-            <div class="pay-qr-card pay-qr-card--wx">
-              <div class="pay-qr-badge"><span class="pay-dot pay-dot--wx"></span>微信支付 · <strong class="pay-amt-text">¥4.9</strong></div>
-              <img src="pay/wechat_pay.jpg" alt="微信收款码" loading="lazy">
-            </div>
-            <div class="pay-qr-card pay-qr-card--ali">
-              <div class="pay-qr-badge"><span class="pay-dot pay-dot--ali"></span>支付宝 · <strong class="pay-amt-text">¥4.9</strong></div>
-              <img src="pay/alipay.jpg" alt="支付宝收款码" loading="lazy">
-            </div>
-          </div>
-
-          <div class="pay-claim-box">
-            <div class="pay-claim-row">
-              <div class="pay-method-pills" id="payMethodSwitch">
-                <button type="button" class="pay-method-btn active" data-pay-method="wechat">微信</button>
-                <button type="button" class="pay-method-btn" data-pay-method="alipay">支付宝</button>
-              </div>
-              <input type="text" id="payReceiptInput" placeholder="已备注用户名可留空；忘写备注请填微信/支付宝昵称或付款时间" maxlength="80">
-              <button type="button" class="btn btn-primary" id="btnSubmitPayClaim">我已付款，立即先享</button>
-            </div>
-            <div class="pay-claim-status" id="payClaimMsg">在付款备注填好用户名即可直接点「我已付款，立即先享」解锁 48 小时；作者核对到账后自动转正为完整 30 天。</div>
-          </div>
-        </div>
-
-        <!-- Activation / Redemption Code Box -->
-        <div class="redeem-box">
-          <label for="redeemCodeInput">已有 Pro / Ultra 激活码？直接兑换</label>
-          <div class="redeem-row">
-            <input type="text" id="redeemCodeInput" placeholder="例如 LSPRO-XXXX-XXXX 或 LSULT-XXXX-XXXX">
-            <button type="button" class="btn btn-secondary" id="btnRedeemCode">立即激活</button>
-          </div>
-          <div class="form-help" id="redeemMsg">输入 12 位月卡激活码后立即生效（30 天）；所有功能毛玻璃锁将实时解除。</div>
-        </div>
-
-        <!-- Clear 3-Tier Plan Comparison (Pro & Ultra clickable and synced with QR plan switch) -->
+        <!-- Step 1: Clear 3-Tier Plan Selection (Pro & Ultra clickable and synced with QR codes below) -->
         <div class="modal-plans-grid" id="modalPlansGrid">
           <div class="mini-plan">
             <div class="mini-plan-head">
@@ -540,6 +495,49 @@
               <li>额度用完后仍可无缝切回自带 Key</li>
             </ul>
           </div>
+        </div>
+
+        <!-- Step 2: Payment Path (WeChat Pay + Alipay QR Codes) -->
+        <div class="pay-qr-panel">
+          <div class="pay-qr-top">
+            <div>
+              <div class="pay-qr-title">扫码开通 <span class="pay-selected-tag" id="paySelectedTag">Pro · ¥4.9/月</span></div>
+              <div class="pay-qr-note" id="payRemarkHint">扫码付款时请在微信/支付宝「添加备注」填写你的用户名，付款后点击下方按钮即可开通。</div>
+            </div>
+          </div>
+
+          <div class="pay-qr-grid">
+            <div class="pay-qr-card pay-qr-card--wx">
+              <div class="pay-qr-badge"><span class="pay-dot pay-dot--wx"></span>微信支付 · <strong class="pay-amt-text">¥4.9</strong></div>
+              <img src="pay/wechat_pay.jpg" alt="微信收款码" loading="lazy">
+            </div>
+            <div class="pay-qr-card pay-qr-card--ali">
+              <div class="pay-qr-badge"><span class="pay-dot pay-dot--ali"></span>支付宝 · <strong class="pay-amt-text">¥4.9</strong></div>
+              <img src="pay/alipay.jpg" alt="支付宝收款码" loading="lazy">
+            </div>
+          </div>
+
+          <div class="pay-claim-box">
+            <div class="pay-claim-row">
+              <div class="pay-method-pills" id="payMethodSwitch">
+                <button type="button" class="pay-method-btn active" data-pay-method="wechat">微信</button>
+                <button type="button" class="pay-method-btn" data-pay-method="alipay">支付宝</button>
+              </div>
+              <input type="text" id="payReceiptInput" placeholder="已备注用户名可留空；忘写备注请填微信/支付宝昵称或付款时间" maxlength="80">
+              <button type="button" class="btn btn-primary" id="btnSubmitPayClaim">我已完成付款</button>
+            </div>
+            <div class="pay-claim-status" id="payClaimMsg">付款时请务必在备注中填写用户名；系统将核验到账，未实际付款的订单会自动失效。</div>
+          </div>
+        </div>
+
+        <!-- Step 3: Activation / Redemption Code Box -->
+        <div class="redeem-box">
+          <label for="redeemCodeInput">已有 Pro / Ultra 激活码？直接兑换</label>
+          <div class="redeem-row">
+            <input type="text" id="redeemCodeInput" placeholder="例如 LSPRO-XXXX-XXXX 或 LSULT-XXXX-XXXX">
+            <button type="button" class="btn btn-secondary" id="btnRedeemCode">立即激活</button>
+          </div>
+          <div class="form-help" id="redeemMsg">输入 12 位月卡激活码后立即生效（30 天）；所有功能毛玻璃锁将实时解除。</div>
         </div>
       </div>
     </div>
@@ -646,6 +644,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=7.5"></script>
+  <script src="app.js?v=7.6"></script>
 </body>
 </html>

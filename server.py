@@ -2158,9 +2158,9 @@ async def billing_claim(req: PaymentClaimRequest, request: Request, _rl=Depends(
 
     plan_label = "Ultra" if claim["plan"] == "ultra" else "Pro"
     msg = (
-        f"已为你立即先享 48 小时 {plan_label} 全部功能！作者核对到账后将自动转正为完整 30 天。"
+        f"已收到你的付款确认，{plan_label} 会员权限已为你开启（核验到账后自动生效完整 30 天）。"
         if temp_granted
-        else f"已提交 {plan_label} 付款核对申请，作者确认到账后将为你开通 30 天。"
+        else f"已收到你的 {plan_label} 付款提交，核验到账后将为你开通 30 天会员。"
     )
     return {
         "status": "ok",
