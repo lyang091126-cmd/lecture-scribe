@@ -3544,6 +3544,10 @@ function openAccountModal(hintMsg = '') {
   }
   el.accountModal.classList.add('open');
   lucide.createIcons();
+  // Always pull latest membership plan/quotas from server when opening modal
+  if (state.auth.token) {
+    refreshAuthUser();
+  }
 }
 
 function closeAccountModal() {
@@ -3755,6 +3759,16 @@ function handleLogout() {
 function setupAccountListeners() {
   el.btnAccount?.addEventListener('click', () => openAccountModal());
   el.btnDrawerUpgrade?.addEventListener('click', () => openAccountModal());
+
+  // Automatically sync latest plan when returning to this browser tab
+  let lastAuthSyncAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !state.auth.token) return;
+    const now = Date.now();
+    if (now - lastAuthSyncAt < 10000) return;
+    lastAuthSyncAt = now;
+    refreshAuthUser();
+  });
   el.btnCloseAccount?.addEventListener('click', closeAccountModal);
   el.accountModal?.addEventListener('click', (e) => {
     if (e.target === el.accountModal) closeAccountModal();
